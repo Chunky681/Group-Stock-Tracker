@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, Edit2, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
-import { readSheetData, appendRow, updateRow, initializeSheet } from '../utils/googleSheets';
+import { Edit2, RefreshCw } from 'lucide-react';
+import { readSheetData, updateRow, initializeSheet } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
 const Portfolio = () => {
@@ -14,7 +14,6 @@ const Portfolio = () => {
 
   useEffect(() => {
     loadPortfolio();
-    initializeSheet();
   }, []);
 
   const loadPortfolio = async () => {
@@ -141,66 +140,117 @@ const Portfolio = () => {
     setEditForm({ username: '', shares: '' });
   };
 
-  const totalValue = portfolio.reduce((sum, item) => sum + item.value, 0);
-  const groupedByTicker = portfolio.reduce((acc, item) => {
-    if (!acc[item.ticker]) {
-      acc[item.ticker] = [];
-    }
-    acc[item.ticker].push(item);
-    return acc;
-  }, {});
+  const totalValue = useMemo(() => 
+    portfolio.reduce((sum, item) => sum + item.value, 0),
+    [portfolio]
+  );
+
+  const groupedByTicker = useMemo(() => {
+    return portfolio.reduce((acc, item) => {
+      if (!acc[item.ticker]) {
+        acc[item.ticker] = [];
+      }
+      acc[item.ticker].push(item);
+      return acc;
+    }, {});
+  }, [portfolio]);
 
   if (isLoading) {
     return (
-      <div className="card p-8 text-center">
-        <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-primary-500" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="card p-8 text-center"
+      >
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+        >
+          <RefreshCw className="w-8 h-8 mx-auto mb-4 text-primary-500" />
+        </motion.div>
         <p className="text-slate-400">Loading portfolio...</p>
-      </div>
+      </motion.div>
     );
   }
 
   if (error) {
     return (
-      <div className="card p-6 border-red-500/50">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card p-6 border-red-500/50"
+      >
         <p className="text-red-400 mb-4">{error}</p>
         <p className="text-sm text-slate-400 mb-4">
           Make sure you've configured your Google Sheets API key and Sheet ID in your environment variables.
         </p>
-        <button onClick={loadPortfolio} className="btn-primary">
+        <motion.button
+          onClick={loadPortfolio}
+          className="btn-primary"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
           Retry
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="card p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="card p-6"
+      >
         <div className="flex items-center justify-between mb-6">
-          <div>
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
+          >
             <h2 className="text-2xl font-bold text-white mb-2">Portfolio Overview</h2>
             <p className="text-slate-400">Total portfolio value across all users</p>
-          </div>
-          <button
+          </motion.div>
+          <motion.button
             onClick={refreshPrices}
             disabled={refreshLoading}
             className="btn-secondary flex items-center gap-2"
+            whileHover={{ scale: refreshLoading ? 1 : 1.05 }}
+            whileTap={{ scale: refreshLoading ? 1 : 0.95 }}
           >
-            <RefreshCw className={`w-4 h-4 ${refreshLoading ? 'animate-spin' : ''}`} />
+            <motion.div
+              animate={refreshLoading ? { rotate: 360 } : {}}
+              transition={refreshLoading ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </motion.div>
             Refresh Prices
-          </button>
+          </motion.button>
         </div>
         
-        <div className="text-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+          className="text-center"
+        >
           <p className="text-slate-400 mb-2">Total Portfolio Value</p>
-          <p className="text-5xl font-bold text-white mb-4">
+          <motion.p
+            key={totalValue}
+            initial={{ scale: 0.8 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 200 }}
+            className="text-5xl font-bold text-white mb-4"
+          >
             ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
-      </div>
+          </motion.p>
+        </motion.div>
+      </motion.div>
 
       <div className="space-y-4">
-        {Object.entries(groupedByTicker).map(([ticker, items]) => {
+        {Object.entries(groupedByTicker).map(([ticker, items], tickerIndex) => {
           const tickerTotalShares = items.reduce((sum, item) => sum + item.shares, 0);
           const tickerTotalValue = items.reduce((sum, item) => sum + item.value, 0);
           const avgPrice = items[0]?.price || 0;
@@ -208,26 +258,38 @@ const Portfolio = () => {
           return (
             <motion.div
               key={ticker}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: tickerIndex * 0.1, duration: 0.3 }}
               className="card p-6"
             >
-              <div className="flex items-center justify-between mb-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: tickerIndex * 0.1 + 0.1 }}
+                className="flex items-center justify-between mb-4"
+              >
                 <div>
                   <h3 className="text-xl font-bold text-white">{ticker}</h3>
                   <p className="text-slate-400 text-sm">
                     ${avgPrice.toFixed(2)} per share
                   </p>
                 </div>
-                <div className="text-right">
+                <motion.div
+                  key={tickerTotalValue}
+                  initial={{ scale: 0.8 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 200 }}
+                  className="text-right"
+                >
                   <p className="text-lg font-semibold text-white">
                     ${tickerTotalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                   <p className="text-sm text-slate-400">
                     {tickerTotalShares.toFixed(2)} shares
                   </p>
-                </div>
-              </div>
+                </motion.div>
+              </motion.div>
               
               <div className="border-t border-slate-700 pt-4 space-y-3">
                 {items.map((item, index) => {
@@ -236,9 +298,11 @@ const Portfolio = () => {
                   return (
                     <motion.div
                       key={item.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: tickerIndex * 0.1 + index * 0.05, duration: 0.2 }}
+                      whileHover={{ x: 4, backgroundColor: 'rgba(51, 65, 85, 0.5)' }}
+                      className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg transition-colors"
                     >
                       {editingIndex === globalIndex ? (
                         <div className="flex items-center gap-2 flex-1">
@@ -258,18 +322,22 @@ const Portfolio = () => {
                             min="0"
                             step="0.01"
                           />
-                          <button
+                          <motion.button
                             onClick={handleSaveEdit}
                             className="btn-primary py-2 px-3 text-sm"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                           >
                             Save
-                          </button>
-                          <button
+                          </motion.button>
+                          <motion.button
                             onClick={handleCancelEdit}
                             className="btn-secondary py-2 px-3 text-sm"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                           >
                             Cancel
-                          </button>
+                          </motion.button>
                         </div>
                       ) : (
                         <>
@@ -285,12 +353,14 @@ const Portfolio = () => {
                                 ${item.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                             </div>
-                            <button
+                            <motion.button
                               onClick={() => handleEdit(globalIndex)}
                               className="p-2 hover:bg-slate-600 rounded-lg transition-colors"
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
                             >
                               <Edit2 className="w-4 h-4 text-slate-400" />
-                            </button>
+                            </motion.button>
                           </div>
                         </>
                       )}
@@ -303,11 +373,18 @@ const Portfolio = () => {
         })}
       </div>
 
-      {portfolio.length === 0 && (
-        <div className="card p-8 text-center">
-          <p className="text-slate-400">No portfolio entries yet. Add stocks above to get started!</p>
-        </div>
-      )}
+      <AnimatePresence>
+        {portfolio.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="card p-8 text-center"
+          >
+            <p className="text-slate-400">No portfolio entries yet. Add stocks above to get started!</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

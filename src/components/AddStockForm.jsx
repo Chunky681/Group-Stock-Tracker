@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Loader, CheckCircle2 } from 'lucide-react';
 import { appendRow } from '../utils/googleSheets';
@@ -46,14 +46,6 @@ const AddStockForm = ({ stockData, onSuccess }) => {
       setSuccess(true);
       setUsername('');
       setShares('');
-      
-      // Clear success message after 2 seconds and call onSuccess
-      setTimeout(() => {
-        setSuccess(false);
-        if (onSuccess) {
-          onSuccess();
-        }
-      }, 2000);
     } catch (error) {
       console.error('Error adding stock:', error);
       setError(error.message || 'Failed to add stock. Please try again.');
@@ -61,6 +53,20 @@ const AddStockForm = ({ stockData, onSuccess }) => {
       setIsSubmitting(false);
     }
   };
+
+  // Clear success message after 2 seconds and call onSuccess
+  useEffect(() => {
+    if (success) {
+      const timeoutId = setTimeout(() => {
+        setSuccess(false);
+        if (onSuccess) {
+          onSuccess();
+        }
+      }, 2000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [success, onSuccess]);
 
   if (!stockData) {
     return null;

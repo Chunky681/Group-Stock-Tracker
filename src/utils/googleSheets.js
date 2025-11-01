@@ -105,10 +105,6 @@ export const updateRow = async (rowIndex, rowData) => {
   }
 };
 
-export const deleteRow = async (rowIndex) => {
-  return updateRow(rowIndex, ['', '', '', '']);
-};
-
 export const initializeSheet = async () => {
   try {
     const data = await readSheetData('Sheet1!A1:D1');
