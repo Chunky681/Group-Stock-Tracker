@@ -22,7 +22,9 @@ const StockSearch = ({ onStockSelected }) => {
     setIsSearching(true);
     setError(null);
     try {
+      console.log('Performing search for:', searchQuery);
       const results = await searchTickers(searchQuery);
+      console.log('Search returned results:', results);
       setSearchResults(results);
       if (results.length === 0 && searchQuery.trim().length >= 2) {
         setError('No stocks found. You can still enter a ticker symbol manually.');
@@ -101,54 +103,31 @@ const StockSearch = ({ onStockSelected }) => {
     <div className="w-full">
       <div className="relative">
         <div className="relative">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5 z-10" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setError(null);
-                setSuccessMessage(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isLoadingQuote) {
-                  if (searchResults.length > 0 && searchResults[0]) {
-                    handleStockSelect(searchResults[0]);
-                  } else if (searchQuery.trim().length >= 1) {
-                    handleManualEntry();
-                  }
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5 z-10" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setError(null);
+              setSuccessMessage(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !isLoadingQuote) {
+                if (searchResults.length > 0 && searchResults[0]) {
+                  handleStockSelect(searchResults[0]);
+                } else if (searchQuery.trim().length >= 1) {
+                  handleManualEntry();
                 }
-              }}
-              placeholder="Search for a stock ticker (e.g., AAPL, MSFT, GOOGL)..."
-              className="input-field pl-12 pr-12"
-              disabled={isLoadingQuote}
-            />
-            {isSearching && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2"
-              >
-                <Loader className="text-primary-500 w-5 h-5 animate-spin" />
-              </motion.div>
-            )}
-            {!isSearching && isLoadingQuote && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2"
-              >
-                <Loader className="text-primary-400 w-5 h-5 animate-spin" />
-              </motion.div>
-            )}
-          </motion.div>
+              }
+            }}
+            placeholder="Search for a stock ticker (e.g., AAPL, MSFT, GOOGL)..."
+            className="input-field pl-12 pr-12"
+            disabled={isLoadingQuote}
+          />
+          {(isSearching || isLoadingQuote) && (
+            <Loader className={`absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin ${isSearching ? 'text-primary-500' : 'text-primary-400'}`} />
+          )}
         </div>
 
         {/* Error Message */}

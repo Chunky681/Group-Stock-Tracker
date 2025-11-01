@@ -188,23 +188,15 @@ const AddStockForm = ({ stockData, onSuccess }) => {
           whileTap={{ scale: isSubmitting ? 1 : 0.98 }}
         >
           {isSubmitting ? (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-2"
-            >
+            <>
               <Loader className="w-4 h-4 animate-spin" />
               Adding...
-            </motion.span>
+            </>
           ) : (
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-2"
-            >
+            <>
               <Plus className="w-4 h-4" />
               Add to Portfolio
-            </motion.span>
+            </>
           )}
         </motion.button>
       </form>

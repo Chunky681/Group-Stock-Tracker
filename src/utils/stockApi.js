@@ -1,5 +1,61 @@
 // Stock API Integration
-// Using Yahoo Finance API (free, no API key required)
+// Using Alpha Vantage API (free tier available)
+// Get your free API key from: https://www.alphavantage.co/support/#api-key
+
+const getApiKey = () => {
+  // Try to get API key from environment variable
+  try {
+    const apiKey = import.meta.env?.VITE_ALPHA_VANTAGE_API_KEY;
+    
+    if (apiKey && typeof apiKey === 'string' && apiKey !== 'your_api_key_here' && apiKey.trim() !== '') {
+      return apiKey.trim();
+    }
+  } catch (error) {
+    console.warn('Error reading environment variable:', error);
+  }
+  
+  // Fallback to demo key (limited to 5 API calls per minute)
+  // Users should get their own free key from alphavantage.co
+  console.warn('Using demo API key. Get your free key at https://www.alphavantage.co/support/#api-key');
+  return 'demo'; // Alpha Vantage demo key
+};
+
+const ALPHA_VANTAGE_BASE_URL = 'https://www.alphavantage.co/query';
+
+const makeRequest = async (params) => {
+  const apiKey = getApiKey();
+  const queryParams = new URLSearchParams({
+    ...params,
+    apikey: apiKey,
+  });
+  
+  const url = `${ALPHA_VANTAGE_BASE_URL}?${queryParams.toString()}`;
+  
+  try {
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Alpha Vantage returns error messages in the response
+    if (data['Error Message']) {
+      throw new Error(data['Error Message']);
+    }
+    
+    if (data['Note']) {
+      throw new Error(`API rate limit: ${data['Note']}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Alpha Vantage API error:', error);
+    console.error('API Key used:', apiKey ? `${apiKey.substring(0, 4)}...` : 'none');
+    throw error;
+  }
+};
 
 export const getStockQuote = async (ticker) => {
   if (!ticker || !ticker.trim()) {
@@ -9,49 +65,30 @@ export const getStockQuote = async (ticker) => {
   const symbol = ticker.trim().toUpperCase();
   
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+    // Use Alpha Vantage GLOBAL_QUOTE function
+    const data = await makeRequest({
+      function: 'GLOBAL_QUOTE',
+      symbol: symbol,
+    });
     
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch stock data: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
+    if (!data['Global Quote'] || !data['Global Quote']['05. price']) {
       throw new Error(`No data found for ticker: ${symbol}`);
     }
     
-    const result = data.chart.result[0];
-    const meta = result.meta;
+    const quote = data['Global Quote'];
     
-    const quote = result.indicators.quote[0];
-    const closePrices = quote.close;
-    
-    let latestPrice = meta.regularMarketPrice || meta.previousClose;
-    
-    if (!latestPrice && closePrices) {
-      for (let i = closePrices.length - 1; i >= 0; i--) {
-        if (closePrices[i] !== null) {
-          latestPrice = closePrices[i];
-          break;
-        }
-      }
-    }
+    const price = parseFloat(quote['05. price']) || 0;
+    const previousClose = parseFloat(quote['08. previous close']) || price;
+    const change = parseFloat(quote['09. change']) || 0;
+    const changePercent = parseFloat(quote['10. change percent']?.replace('%', '')) || 0;
     
     return {
-      symbol: meta.symbol,
-      name: meta.shortName || meta.longName || symbol,
-      price: latestPrice || meta.previousClose || 0,
-      previousClose: meta.previousClose || latestPrice || 0,
-      change: meta.regularMarketPrice ? (meta.regularMarketPrice - (meta.previousClose || meta.regularMarketPrice)) : 0,
-      changePercent: meta.regularMarketPrice && meta.previousClose 
-        ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100 
-        : 0,
-      currency: meta.currency || 'USD',
-      exchange: meta.exchangeName || meta.exchange || 'NYSE',
-      timestamp: Date.now(),
+      symbol: quote['01. symbol'] || symbol,
+      name: quote['01. symbol'] || symbol, // Alpha Vantage doesn't provide company name in GLOBAL_QUOTE
+      price: Number(price.toFixed(2)),
+      previousClose: Number(previousClose.toFixed(2)),
+      change: Number(change.toFixed(2)),
+      changePercent: Number(changePercent.toFixed(2)),
     };
   } catch (error) {
     console.error('Error fetching stock quote:', error);
@@ -67,28 +104,39 @@ export const searchTickers = async (query) => {
   const searchQuery = query.trim().toUpperCase();
   
   try {
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(searchQuery)}&quotesCount=10`;
+    // Alpha Vantage SYMBOL_SEARCH function
+    const data = await makeRequest({
+      function: 'SYMBOL_SEARCH',
+      keywords: searchQuery,
+    });
     
-    const response = await fetch(url);
+    console.log('Search API response:', data);
     
-    if (!response.ok) {
-      throw new Error(`Failed to search: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    if (!data.quotes || data.quotes.length === 0) {
+    if (!data.bestMatches || data.bestMatches.length === 0) {
+      console.log('No matches found for:', searchQuery);
       return [];
     }
     
-    return data.quotes.map(quote => ({
-      symbol: quote.symbol,
-      name: quote.longname || quote.shortname || quote.symbol,
-      exchange: quote.exchange || 'N/A',
-      type: quote.quoteType || 'EQUITY',
-    }));
+    // Map Alpha Vantage search results to our format
+    const filtered = data.bestMatches
+      .filter(match => {
+        const type = match['3. type']?.toUpperCase() || '';
+        // Filter for equity stocks only
+        return type.includes('EQUITY') || type.includes('SHARE') || !type;
+      })
+      .map(match => ({
+        symbol: match['1. symbol'] || searchQuery,
+        name: match['2. name'] || match['1. symbol'] || searchQuery,
+        exchange: match['4. region']?.split(' - ')[0] || 'N/A',
+      }))
+      .slice(0, 10);
+    
+    console.log('Filtered results:', filtered);
+    return filtered;
   } catch (error) {
     console.error('Error searching tickers:', error);
+    // Return empty array on error to allow manual entry
+    // If search fails, user can still enter ticker manually
     return [];
   }
 };

@@ -46,11 +46,10 @@ const Portfolio = () => {
         return {
           id: index + 1,
           username: row[0]?.trim() || '',
-          ticker: ticker,
-          shares: shares,
-          price: price,
+          ticker,
+          shares,
+          price,
           value: shares * price,
-          lastUpdated: row[3] || new Date().toISOString(),
         };
       });
       
@@ -340,7 +339,7 @@ const Portfolio = () => {
                           </motion.button>
                         </div>
                       ) : (
-                        <>
+                        <div className="flex items-center justify-between w-full">
                           <div>
                             <p className="font-semibold text-white">{item.username}</p>
                             <p className="text-sm text-slate-400">
@@ -362,7 +361,7 @@ const Portfolio = () => {
                               <Edit2 className="w-4 h-4 text-slate-400" />
                             </motion.button>
                           </div>
-                        </>
+                        </div>
                       )}
                     </motion.div>
                   );
