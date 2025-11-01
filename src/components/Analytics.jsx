@@ -177,6 +177,24 @@ const Analytics = ({ refreshKey }) => {
       .sort((a, b) => b.value - a.value);
   }, [filteredPortfolio]);
 
+  // Data for stock distribution pie chart (by stock across all selected users)
+  const totalValueByStock = useMemo(() => {
+    const stockTotals = {};
+    filteredPortfolio.forEach(item => {
+      if (!stockTotals[item.ticker]) {
+        stockTotals[item.ticker] = 0;
+      }
+      stockTotals[item.ticker] += item.value;
+    });
+    
+    return Object.entries(stockTotals)
+      .map(([ticker, value]) => ({
+        name: ticker,
+        value: Number(value.toFixed(2)),
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredPortfolio]);
+
   // Data for pie chart by stock (for each stock, show user distribution)
   const getStockDistribution = (ticker) => {
     const stockItems = filteredPortfolio.filter(item => item.ticker === ticker);
@@ -386,7 +404,7 @@ const Analytics = ({ refreshKey }) => {
         )}
       </div>
 
-      {/* Total Value Distribution Pie Chart */}
+      {/* Total Value Distribution Pie Charts */}
       {totalValueByUser.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -398,32 +416,72 @@ const Analytics = ({ refreshKey }) => {
             <PieChart className="w-5 h-5 text-primary-500" />
             <h3 className="text-xl font-bold text-white">Total Value Distribution</h3>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsPieChart>
-                <Pie
-                  data={totalValueByUser}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={renderLabel}
-                  outerRadius={120}
-                  innerRadius={0}
-                  startAngle={90}
-                  endAngle={-270}
-                  paddingAngle={0}
-                  stroke="none"
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {totalValueByUser.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-              </RechartsPieChart>
-            </ResponsiveContainer>
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* User Distribution Pie Chart */}
+            <div>
+              <h4 className="text-lg font-semibold text-white mb-4 text-center">By User</h4>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPieChart>
+                    <Pie
+                      data={totalValueByUser}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={renderLabel}
+                      outerRadius={120}
+                      innerRadius={0}
+                      startAngle={90}
+                      endAngle={-270}
+                      paddingAngle={0}
+                      stroke="none"
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {totalValueByUser.map((entry, index) => (
+                        <Cell key={`user-cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Stock Distribution Pie Chart */}
+            {totalValueByStock.length > 0 && (
+              <div>
+                <h4 className="text-lg font-semibold text-white mb-4 text-center">By Stock</h4>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPieChart>
+                      <Pie
+                        data={totalValueByStock}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={renderLabel}
+                        outerRadius={120}
+                        innerRadius={0}
+                        startAngle={90}
+                        endAngle={-270}
+                        paddingAngle={0}
+                        stroke="none"
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {totalValueByStock.map((entry, index) => (
+                          <Cell key={`stock-cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       )}
@@ -492,20 +550,18 @@ const Analytics = ({ refreshKey }) => {
                       <p className="text-xs text-slate-400 mb-1">Total Shares</p>
                       <p className="text-lg font-bold text-white">{stock.totalShares.toFixed(2)}</p>
                     </div>
-                    {stock.dividendYield > 0 && (
-                      <>
-                        <div>
-                          <p className="text-xs text-slate-400 mb-1">Dividend Yield</p>
-                          <p className="text-lg font-bold text-white">{stock.dividendYield.toFixed(2)}%</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-400 mb-1">Yearly Dividend</p>
-                          <p className="text-lg font-bold text-primary-400">
-                            ${stock.totalYearlyDividend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      </>
-                    )}
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Dividend Yield</p>
+                      <p className={`text-lg font-bold ${stock.dividendYield > 0 ? 'text-white' : 'text-slate-500'}`}>
+                        {stock.dividendYield > 0 ? `${stock.dividendYield.toFixed(2)}%` : '0.00%'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Yearly Dividend</p>
+                      <p className={`text-lg font-bold ${stock.totalYearlyDividend > 0 ? 'text-primary-400' : 'text-slate-500'}`}>
+                        ${stock.totalYearlyDividend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Comprehensive Stock Metrics */}
@@ -611,6 +667,12 @@ const Analytics = ({ refreshKey }) => {
                               </p>
                             </div>
                           )}
+                          <div className="p-2 bg-slate-800/50 rounded">
+                            <p className="text-xs text-slate-400 mb-1">Dividend Yield</p>
+                            <p className={`text-sm font-bold ${stock.dividendYield > 0 ? 'text-white' : 'text-slate-500'}`}>
+                              {stock.dividendYield > 0 ? `${stock.dividendYield.toFixed(2)}%` : '0.00%'}
+                            </p>
+                          </div>
                           {stock.fullQuote.peRatio && (
                             <div className="p-2 bg-slate-800/50 rounded">
                               <p className="text-xs text-slate-400 mb-1">P/E Ratio</p>
