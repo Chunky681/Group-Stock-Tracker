@@ -27,7 +27,9 @@ const StockSearch = ({ onStockSelected }) => {
       console.log('Search returned results:', results);
       setSearchResults(results);
       if (results.length === 0 && searchQuery.trim().length >= 2) {
-        setError('No stocks found. You can still enter a ticker symbol manually.');
+        // Check if it's a rate limit issue
+        console.warn('No search results - may be rate limited');
+        setError('Search rate limit reached or no results found. You can still enter a ticker symbol manually (e.g., TSLA) and press Enter.');
       }
     } catch (error) {
       console.error('Search error:', error);

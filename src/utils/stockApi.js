@@ -1,6 +1,7 @@
 // Stock API Integration
 // Using Alpha Vantage API (free tier available)
 // Get your free API key from: https://www.alphavantage.co/support/#api-key
+import { mockStockData, searchMockStocks, getMockStockQuote, isRateLimitExceeded } from './mockStockData';
 
 const getApiKey = () => {
   // Try to get API key from environment variable
@@ -40,13 +41,36 @@ const makeRequest = async (params) => {
     
     const data = await response.json();
     
+    // Check if rate limit is exceeded - if so, mark it
+    if (isRateLimitExceeded(data)) {
+      console.warn('Rate limit exceeded, will use mock data');
+      data._rateLimitExceeded = true;
+      return data;
+    }
+    
     // Alpha Vantage returns error messages in the response
     if (data['Error Message']) {
       throw new Error(data['Error Message']);
     }
     
     if (data['Note']) {
+      // Check if it's a rate limit note
+      if (data['Note'].toLowerCase().includes('call frequency') || data['Note'].toLowerCase().includes('rate limit')) {
+        data._rateLimitExceeded = true;
+        return data;
+      }
       throw new Error(`API rate limit: ${data['Note']}`);
+    }
+    
+    // Check for rate limit information
+    if (data['Information']) {
+      const info = data['Information'].toLowerCase();
+      if (info.includes('rate limit') || info.includes('requests per day')) {
+        console.warn('Rate limit detected in Information field');
+        data._rateLimitExceeded = true;
+        return data;
+      }
+      // Other information messages are just warnings
     }
     
     return data;
@@ -71,8 +95,24 @@ export const getStockQuote = async (ticker) => {
       symbol: symbol,
     });
     
+    // If rate limit exceeded, use mock data
+    if (data._rateLimitExceeded) {
+      console.log('Rate limit exceeded, using mock data for', symbol);
+      try {
+        return getMockStockQuote(symbol);
+      } catch (mockError) {
+        throw new Error(`Rate limit exceeded and no mock data available for ${symbol}`);
+      }
+    }
+    
     if (!data['Global Quote'] || !data['Global Quote']['05. price']) {
-      throw new Error(`No data found for ticker: ${symbol}`);
+      // Try mock data as fallback
+      try {
+        console.log('No API data, trying mock data for', symbol);
+        return getMockStockQuote(symbol);
+      } catch (mockError) {
+        throw new Error(`No data found for ticker: ${symbol}`);
+      }
     }
     
     const quote = data['Global Quote'];
@@ -92,7 +132,18 @@ export const getStockQuote = async (ticker) => {
     };
   } catch (error) {
     console.error('Error fetching stock quote:', error);
-    throw new Error(`Failed to fetch stock data for ${symbol}: ${error.message}`);
+    
+    // If error and not already tried, attempt mock data
+    if (!error.message.includes('mock data')) {
+      try {
+        console.log('API error, trying mock data for', symbol);
+        return getMockStockQuote(symbol);
+      } catch (mockError) {
+        throw new Error(`Failed to fetch stock data for ${symbol}: ${error.message}`);
+      }
+    }
+    
+    throw error;
   }
 };
 
@@ -112,8 +163,28 @@ export const searchTickers = async (query) => {
     
     console.log('Search API response:', data);
     
+    // If rate limit exceeded, use mock data
+    if (data._rateLimitExceeded || data['Information']) {
+      const info = data['Information'] || '';
+      if (isRateLimitExceeded(data) || info.toLowerCase().includes('rate limit')) {
+        console.log('Rate limit exceeded, using mock data for search');
+        const mockResults = searchMockStocks(searchQuery);
+        if (mockResults.length > 0) {
+          console.log('Found', mockResults.length, 'mock results');
+          return mockResults;
+        }
+        // If no mock results, return empty to allow manual entry
+        return [];
+      }
+    }
+    
     if (!data.bestMatches || data.bestMatches.length === 0) {
-      console.log('No matches found for:', searchQuery);
+      // Try mock data as fallback
+      console.log('No API matches, trying mock data');
+      const mockResults = searchMockStocks(searchQuery);
+      if (mockResults.length > 0) {
+        return mockResults;
+      }
       return [];
     }
     
@@ -135,6 +206,12 @@ export const searchTickers = async (query) => {
     return filtered;
   } catch (error) {
     console.error('Error searching tickers:', error);
+    // Try mock data as fallback
+    console.log('Search error, trying mock data');
+    const mockResults = searchMockStocks(searchQuery);
+    if (mockResults.length > 0) {
+      return mockResults;
+    }
     // Return empty array on error to allow manual entry
     // If search fails, user can still enter ticker manually
     return [];
