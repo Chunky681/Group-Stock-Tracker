@@ -14,6 +14,7 @@ function App() {
   };
 
   const handleStockAdded = () => {
+    // Force portfolio to refresh
     setPortfolioKey(prev => prev + 1);
     setSelectedStock(null);
   };
@@ -21,6 +22,7 @@ function App() {
   return (
     <div className="min-h-screen">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -35,6 +37,7 @@ function App() {
           </p>
         </motion.div>
 
+        {/* Stock Search Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -48,6 +51,7 @@ function App() {
           </div>
         </motion.div>
 
+        {/* Portfolio Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
