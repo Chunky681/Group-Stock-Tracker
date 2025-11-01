@@ -5,26 +5,44 @@ const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 const getApiKey = () => {
   const key = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY || '';
-  if (!key) {
+  if (!key || key === 'your_api_key_here' || key.trim() === '') {
     console.warn('Google Sheets API key not found in environment variables');
+    return '';
   }
-  return key;
+  return key.trim();
 };
 
 const getSheetId = () => {
   const id = import.meta.env.VITE_GOOGLE_SHEET_ID || '';
-  if (!id) {
+  if (!id || id === 'your_sheet_id_here' || id.trim() === '') {
     console.warn('Google Sheet ID not found in environment variables');
+    return '';
   }
-  return id;
+  return id.trim();
 };
 
 export const readSheetData = async (range = 'Sheet1!A1:D1000') => {
   const apiKey = getApiKey();
   const sheetId = getSheetId();
   
+  // Debug logging
+  console.log('Environment check:', {
+    hasApiKey: !!apiKey,
+    apiKeyLength: apiKey?.length || 0,
+    apiKeyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'none',
+    hasSheetId: !!sheetId,
+    sheetIdLength: sheetId?.length || 0,
+    rawEnv: {
+      VITE_GOOGLE_SHEETS_API_KEY: import.meta.env.VITE_GOOGLE_SHEETS_API_KEY ? 'set' : 'not set',
+      VITE_GOOGLE_SHEET_ID: import.meta.env.VITE_GOOGLE_SHEET_ID ? 'set' : 'not set'
+    }
+  });
+  
   if (!apiKey || !sheetId) {
-    throw new Error('Google Sheets API key or Sheet ID not configured. Please check your environment variables.');
+    const missing = [];
+    if (!apiKey) missing.push('API Key (VITE_GOOGLE_SHEETS_API_KEY)');
+    if (!sheetId) missing.push('Sheet ID (VITE_GOOGLE_SHEET_ID)');
+    throw new Error(`Google Sheets ${missing.join(' and ')} not configured. Please check your .env file and restart the dev server.`);
   }
 
   try {
