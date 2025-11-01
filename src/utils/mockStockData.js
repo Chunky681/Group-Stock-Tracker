@@ -54,10 +54,12 @@ export const mockStockData = [
   { symbol: 'LOW', name: "Lowe's Companies, Inc.", price: 237.89, change: 2.67, changePercent: 1.14, dividendYield: 1.93 },
   { symbol: 'ISRG', name: 'Intuitive Surgical, Inc.', price: 349.23, change: 5.12, changePercent: 1.49, dividendYield: 0.0 },
   // Popular ETFs
-  { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', price: 474.23, change: 2.45, changePercent: 0.52, dividendYield: 1.38 },
-  { symbol: 'SCHD', name: 'Schwab US Dividend Equity ETF', price: 79.45, change: 0.34, changePercent: 0.43, dividendYield: 3.45 },
-  { symbol: 'QQQ', name: 'Invesco QQQ Trust', price: 435.67, change: 3.89, changePercent: 0.90, dividendYield: 0.58 },
-  { symbol: 'QQQM', name: 'Invesco NASDAQ 100 ETF', price: 172.34, change: 1.56, changePercent: 0.91, dividendYield: 0.58 },
+  { symbol: 'VOO', name: 'Vanguard S&P 500 ETF', price: 627.33, change: 2.45, changePercent: 0.52, dividendYield: 1.38 },
+  { symbol: 'SCHD', name: 'Schwab US Dividend Equity ETF', price: 26.75, change: 0.34, changePercent: 0.43, dividendYield: 3.45 },
+  { symbol: 'QQQ', name: 'Invesco QQQ Trust', price: 552.00, change: 3.89, changePercent: 0.90, dividendYield: 0.58 },
+  { symbol: 'QQQM', name: 'Invesco NASDAQ 100 ETF', price: 259.00, change: 1.56, changePercent: 0.91, dividendYield: 0.58 },
+  // Cash and currency
+  { symbol: 'USD', name: 'Currency', price: 1.00, change: 0.00, changePercent: 0.00, dividendYield: 3.75 },
 ];
 
 // Search mock stocks by symbol or name

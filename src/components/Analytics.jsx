@@ -406,11 +406,16 @@ const Analytics = ({ refreshKey }) => {
                   labelLine={false}
                   label={renderLabel}
                   outerRadius={120}
+                  innerRadius={0}
+                  startAngle={90}
+                  endAngle={-270}
+                  paddingAngle={0}
+                  stroke="none"
                   fill="#8884d8"
                   dataKey="value"
                 >
                   {totalValueByUser.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
@@ -501,11 +506,16 @@ const Analytics = ({ refreshKey }) => {
                                 `${name}: ${(percent * 100).toFixed(1)}%`
                               }
                               outerRadius={80}
+                              innerRadius={0}
+                              startAngle={90}
+                              endAngle={-270}
+                              paddingAngle={0}
+                              stroke="none"
                               fill="#8884d8"
                               dataKey="value"
                             >
                               {distribution.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                               ))}
                             </Pie>
                             <Tooltip content={<CustomTooltip />} />
