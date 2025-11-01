@@ -1,0 +1,482 @@
+import { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { BarChart3, PieChart, Users, TrendingUp, Check } from 'lucide-react';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { readSheetData, initializeSheet } from '../utils/googleSheets';
+import { getStockQuote } from '../utils/stockApi';
+
+const COLORS = [
+  '#0ea5e9', // primary-500
+  '#10b981', // green
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#f97316', // orange
+  '#6366f1', // indigo
+  '#06b6d4', // cyan
+];
+
+const Analytics = ({ refreshKey }) => {
+  const [portfolio, setPortfolio] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedUsers, setSelectedUsers] = useState(new Set());
+
+  useEffect(() => {
+    loadPortfolio();
+  }, [refreshKey]);
+
+  const loadPortfolio = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await initializeSheet();
+      const data = await readSheetData();
+      
+      const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
+      
+      // Get unique users and set them all as selected by default
+      const uniqueUsers = [...new Set(rows.map(row => row[0]?.trim()).filter(Boolean))];
+      if (selectedUsers.size === 0) {
+        setSelectedUsers(new Set(uniqueUsers));
+      }
+      
+      const uniqueTickers = [...new Set(rows.map(row => row[1]?.trim().toUpperCase()))];
+      const priceMap = {};
+      
+      for (const ticker of uniqueTickers) {
+        try {
+          const quote = await getStockQuote(ticker);
+          priceMap[ticker] = quote.price;
+        } catch (error) {
+          console.error(`Error fetching price for ${ticker}:`, error);
+          priceMap[ticker] = 0;
+        }
+      }
+      
+      const portfolioData = rows.map((row, index) => {
+        const ticker = row[1]?.trim().toUpperCase() || '';
+        const shares = parseFloat(row[2]) || 0;
+        const price = priceMap[ticker] || 0;
+        
+        return {
+          id: index + 1,
+          username: row[0]?.trim() || '',
+          ticker,
+          shares,
+          price,
+          value: shares * price,
+        };
+      });
+      
+      setPortfolio(portfolioData);
+      
+      // Ensure all users are selected if selection is empty
+      if (selectedUsers.size === 0 && uniqueUsers.length > 0) {
+        setSelectedUsers(new Set(uniqueUsers));
+      }
+    } catch (error) {
+      console.error('Error loading portfolio:', error);
+      setError(error.message || 'Failed to load portfolio.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Filter portfolio for selected users
+  const filteredPortfolio = useMemo(() => {
+    return portfolio.filter(item => selectedUsers.has(item.username));
+  }, [portfolio, selectedUsers]);
+
+  // Get all unique users
+  const allUsers = useMemo(() => {
+    return [...new Set(portfolio.map(item => item.username).filter(Boolean))].sort();
+  }, [portfolio]);
+
+  // Toggle user selection
+  const toggleUser = (username) => {
+    const newSelection = new Set(selectedUsers);
+    if (newSelection.has(username)) {
+      newSelection.delete(username);
+    } else {
+      newSelection.add(username);
+    }
+    setSelectedUsers(newSelection);
+  };
+
+  // Select all users
+  const selectAll = () => {
+    setSelectedUsers(new Set(allUsers));
+  };
+
+  // Deselect all users
+  const deselectAll = () => {
+    setSelectedUsers(new Set());
+  };
+
+  // Calculate total value for selected users
+  const totalValue = useMemo(() => {
+    return filteredPortfolio.reduce((sum, item) => sum + item.value, 0);
+  }, [filteredPortfolio]);
+
+  // Group by ticker and calculate total value per stock
+  const stockTotals = useMemo(() => {
+    const grouped = {};
+    filteredPortfolio.forEach(item => {
+      if (!grouped[item.ticker]) {
+        grouped[item.ticker] = {
+          ticker: item.ticker,
+          totalValue: 0,
+          totalShares: 0,
+          price: item.price,
+        };
+      }
+      grouped[item.ticker].totalValue += item.value;
+      grouped[item.ticker].totalShares += item.shares;
+    });
+    return Object.values(grouped).sort((a, b) => b.totalValue - a.totalValue);
+  }, [filteredPortfolio]);
+
+  // Data for total value pie chart (by user)
+  const totalValueByUser = useMemo(() => {
+    const userTotals = {};
+    filteredPortfolio.forEach(item => {
+      if (!userTotals[item.username]) {
+        userTotals[item.username] = 0;
+      }
+      userTotals[item.username] += item.value;
+    });
+    
+    return Object.entries(userTotals)
+      .map(([username, value]) => ({
+        name: username,
+        value: Number(value.toFixed(2)),
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredPortfolio]);
+
+  // Data for pie chart by stock (for each stock, show user distribution)
+  const getStockDistribution = (ticker) => {
+    const stockItems = filteredPortfolio.filter(item => item.ticker === ticker);
+    const userTotals = {};
+    
+    stockItems.forEach(item => {
+      if (!userTotals[item.username]) {
+        userTotals[item.username] = 0;
+      }
+      userTotals[item.username] += item.value;
+    });
+    
+    return Object.entries(userTotals)
+      .map(([username, value]) => ({
+        name: username,
+        value: Number(value.toFixed(2)),
+      }))
+      .sort((a, b) => b.value - a.value);
+  };
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl">
+          <p className="text-white font-semibold">{payload[0].name}</p>
+          <p className="text-primary-400">
+            ${payload[0].value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const renderLabel = (entry) => {
+    return `${entry.name}: ${((entry.value / totalValue) * 100).toFixed(1)}%`;
+  };
+
+  if (isLoading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="card p-8 text-center"
+      >
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+        >
+          <BarChart3 className="w-8 h-8 mx-auto mb-4 text-primary-500" />
+        </motion.div>
+        <p className="text-slate-400">Loading analytics...</p>
+      </motion.div>
+    );
+  }
+
+  if (error) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card p-6 border-red-500/50"
+      >
+        <p className="text-red-400">{error}</p>
+      </motion.div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center gap-3"
+      >
+        <motion.div
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+        >
+          <BarChart3 className="w-8 h-8 text-primary-500" />
+        </motion.div>
+        <div>
+          <h2 className="text-3xl font-bold text-white">Analytics</h2>
+          <p className="text-slate-400">Portfolio insights for selected users</p>
+        </div>
+      </motion.div>
+
+      {/* User Selection */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="card p-6"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary-500" />
+            <h3 className="text-xl font-bold text-white">Select Users</h3>
+          </div>
+          <div className="flex gap-2">
+            <motion.button
+              onClick={selectAll}
+              className="btn-secondary text-sm py-2 px-3"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Select All
+            </motion.button>
+            <motion.button
+              onClick={deselectAll}
+              className="btn-secondary text-sm py-2 px-3"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Deselect All
+            </motion.button>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {allUsers.map((username, index) => (
+            <motion.button
+              key={username}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.05 }}
+              onClick={() => toggleUser(username)}
+              className={`p-3 rounded-lg border transition-all text-left ${
+                selectedUsers.has(username)
+                  ? 'bg-primary-500/20 border-primary-500/50'
+                  : 'bg-slate-700/30 border-slate-600/50 hover:bg-slate-700/50'
+              }`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="flex items-center gap-2">
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                  selectedUsers.has(username)
+                    ? 'bg-primary-500 border-primary-500'
+                    : 'border-slate-500'
+                }`}>
+                  {selectedUsers.has(username) && (
+                  <Check className="w-3 h-3 text-white" />
+                )}
+                </div>
+                <span className={`font-medium ${
+                  selectedUsers.has(username) ? 'text-white' : 'text-slate-400'
+                }`}>
+                  {username}
+                </span>
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* Total Value */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="card p-6"
+      >
+        <div className="text-center">
+          <p className="text-slate-400 mb-2">Total Portfolio Value</p>
+          <motion.p
+            key={totalValue}
+            initial={{ scale: 0.8 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 200 }}
+            className="text-5xl font-bold text-white mb-4"
+          >
+            ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </motion.p>
+          <p className="text-sm text-slate-500">
+            Across {selectedUsers.size} {selectedUsers.size === 1 ? 'user' : 'users'}
+          </p>
+        </div>
+      </motion.div>
+
+      {/* Total Value Distribution Pie Chart */}
+      {totalValueByUser.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="card p-6"
+        >
+          <div className="flex items-center gap-2 mb-6">
+            <PieChart className="w-5 h-5 text-primary-500" />
+            <h3 className="text-xl font-bold text-white">Total Value Distribution</h3>
+          </div>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsPieChart>
+                <Pie
+                  data={totalValueByUser}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={renderLabel}
+                  outerRadius={120}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {totalValueByUser.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+              </RechartsPieChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Stock Totals */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="card p-6"
+      >
+        <div className="flex items-center gap-2 mb-6">
+          <TrendingUp className="w-5 h-5 text-primary-500" />
+          <h3 className="text-xl font-bold text-white">Stock Holdings</h3>
+        </div>
+        
+        <div className="space-y-6">
+          {stockTotals.map((stock, stockIndex) => {
+            const distribution = getStockDistribution(stock.ticker);
+            
+            return (
+              <motion.div
+                key={stock.ticker}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 + stockIndex * 0.1 }}
+                className="border-t border-slate-700 pt-6 first:border-t-0 first:pt-0"
+              >
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* Stock Info */}
+                  <div>
+                    <div className="mb-4">
+                      <h4 className="text-2xl font-bold text-white mb-2">{stock.ticker}</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Total Value:</span>
+                          <span className="text-white font-semibold">
+                            ${stock.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Total Shares:</span>
+                          <span className="text-white font-semibold">{stock.totalShares.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Price per Share:</span>
+                          <span className="text-white font-semibold">${stock.price.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Pie Chart for Stock Distribution */}
+                  {distribution.length > 0 && (
+                    <div>
+                      <h5 className="text-lg font-semibold text-white mb-4">
+                        Distribution by User
+                      </h5>
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RechartsPieChart>
+                            <Pie
+                              data={distribution}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={({ name, value, percent }) => 
+                                `${name}: ${(percent * 100).toFixed(1)}%`
+                              }
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="value"
+                            >
+                              {distribution.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend />
+                          </RechartsPieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </motion.div>
+
+      {selectedUsers.size === 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="card p-8 text-center"
+        >
+          <Users className="w-16 h-16 mx-auto mb-4 text-slate-600" />
+          <p className="text-slate-400 text-lg">No users selected</p>
+          <p className="text-slate-500 text-sm mt-2">Select at least one user to view analytics</p>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+export default Analytics;
+

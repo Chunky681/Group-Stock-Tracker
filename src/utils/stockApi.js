@@ -163,26 +163,39 @@ export const searchTickers = async (query) => {
     
     console.log('Search API response:', data);
     
-    // If rate limit exceeded, use mock data
-    if (data._rateLimitExceeded || data['Information']) {
-      const info = data['Information'] || '';
-      if (isRateLimitExceeded(data) || info.toLowerCase().includes('rate limit')) {
-        console.log('Rate limit exceeded, using mock data for search');
-        const mockResults = searchMockStocks(searchQuery);
-        if (mockResults.length > 0) {
-          console.log('Found', mockResults.length, 'mock results');
-          return mockResults;
-        }
-        // If no mock results, return empty to allow manual entry
-        return [];
+    // Check for rate limit FIRST - prioritize mock data when rate limited
+    // Check multiple indicators of rate limiting
+    const hasRateLimit = data._rateLimitExceeded || 
+                         isRateLimitExceeded(data) ||
+                         (data['Information'] && (
+                           data['Information'].toLowerCase().includes('rate limit') ||
+                           data['Information'].toLowerCase().includes('requests per day') ||
+                           data['Information'].toLowerCase().includes('call frequency')
+                         )) ||
+                         (data['Note'] && (
+                           data['Note'].toLowerCase().includes('call frequency') ||
+                           data['Note'].toLowerCase().includes('rate limit')
+                         ));
+    
+    if (hasRateLimit) {
+      console.log('Rate limit detected, using mock data for search');
+      const mockResults = searchMockStocks(searchQuery);
+      console.log('Mock search results for', searchQuery, ':', mockResults);
+      if (mockResults.length > 0) {
+        console.log('Found', mockResults.length, 'mock results');
+        return mockResults;
       }
+      // Even if no mock results found, return empty (but log for debugging)
+      console.log('No mock results found for', searchQuery);
+      return [];
     }
     
+    // If no bestMatches from API, try mock data before returning empty
     if (!data.bestMatches || data.bestMatches.length === 0) {
-      // Try mock data as fallback
       console.log('No API matches, trying mock data');
       const mockResults = searchMockStocks(searchQuery);
       if (mockResults.length > 0) {
+        console.log('Found', mockResults.length, 'mock results as fallback');
         return mockResults;
       }
       return [];

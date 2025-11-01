@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Loader, CheckCircle2 } from 'lucide-react';
 import { appendRow } from '../utils/googleSheets';
 
-const AddStockForm = ({ stockData, onSuccess }) => {
-  const [username, setUsername] = useState('');
+const AddStockForm = ({ stockData, selectedUser, onSuccess }) => {
   const [shares, setShares] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -15,8 +14,8 @@ const AddStockForm = ({ stockData, onSuccess }) => {
     setError(null);
     setSuccess(false);
 
-    if (!username.trim()) {
-      setError('Please enter a username');
+    if (!selectedUser || !selectedUser.trim()) {
+      setError('Please select a user first');
       return;
     }
 
@@ -35,16 +34,17 @@ const AddStockForm = ({ stockData, onSuccess }) => {
 
     try {
       const rowData = [
-        username.trim(),
+        selectedUser.trim(),
         stockData.symbol,
         sharesNum.toString(),
         new Date().toISOString(),
       ];
 
+      console.log('Attempting to add stock to Google Sheets...');
       await appendRow(rowData);
+      console.log('Stock added successfully');
       
       setSuccess(true);
-      setUsername('');
       setShares('');
     } catch (error) {
       console.error('Error adding stock:', error);
@@ -97,28 +97,28 @@ const AddStockForm = ({ stockData, onSuccess }) => {
         <h3 className="text-xl font-bold text-white">Add to Portfolio</h3>
       </motion.div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      {!selectedUser && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm mb-4"
         >
-          <label className="block text-sm font-medium text-slate-300 mb-2">
-            Username *
-          </label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => {
-              setUsername(e.target.value);
-              setError(null);
-            }}
-            placeholder="Enter your username"
-            className="input-field"
-            required
-            disabled={isSubmitting}
-          />
+          Please select a user from the "Select User" tab first.
         </motion.div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {selectedUser && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="p-3 bg-primary-500/10 border border-primary-500/30 rounded-lg"
+          >
+            <p className="text-xs text-slate-400 mb-1">Adding stocks for</p>
+            <p className="text-lg font-semibold text-white">{selectedUser}</p>
+          </motion.div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 10 }}
