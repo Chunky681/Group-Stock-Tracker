@@ -1,5 +1,5 @@
 // Stock Data from Google Sheets (Sheet2)
-// This replaces Alpha Vantage API calls
+// Uses Visual Symbol column for all lookups and display
 import { readSheetData } from './googleSheets';
 
 // Cache for stock data to minimize read requests
@@ -8,7 +8,7 @@ let cacheTimestamp = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
 
 // Column indices from Sheet2 (based on the structure shown)
-// Visual Symbol, Symbol, Name, Price, Currency, Change ($), Change (%), Price Open, Day High, Day Low, 52w High, 52w Low, Volume, Market Cap, P/E Ratio, Beta
+// Visual Symbol, Symbol, Name, Price, Currency, Change ($), Change (%), Price Open, Day High, Day Low, 52w High, 52w Low, Volume, Market Cap, P/E Ratio, Beta, Divident Yeild (note: typo in column name)
 const COLUMNS = {
   VISUAL_SYMBOL: 0,
   SYMBOL: 1,
@@ -26,6 +26,7 @@ const COLUMNS = {
   MARKET_CAP: 13,
   PE_RATIO: 14,
   BETA: 15,
+  DIVIDEND_YIELD: 16, // Note: Column header has typo "Divident Yeild"
 };
 
 let readRequestCount = 0;
@@ -54,7 +55,7 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
   // Fetch fresh data
   readRequestCount++;
   try {
-    const data = await readSheetData('Sheet2!A1:P1000');
+    const data = await readSheetData('Sheet2!A1:Q1000'); // Updated to Q to include Dividend Yield column
     
     if (!data || data.length === 0) {
       throw new Error('No data found in Sheet2');
@@ -70,7 +71,7 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
 
       const stock = {
         visualSymbol: row[COLUMNS.VISUAL_SYMBOL]?.trim() || '',
-        symbol: row[COLUMNS.SYMBOL]?.trim() || row[COLUMNS.VISUAL_SYMBOL]?.trim() || '',
+        symbol: row[COLUMNS.SYMBOL]?.trim() || '', // Keep for reference but use visualSymbol for display
         name: row[COLUMNS.NAME]?.trim() || '',
         price: parseNumber(row[COLUMNS.PRICE]),
         currency: row[COLUMNS.CURRENCY]?.trim() || 'USD',
@@ -85,10 +86,11 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
         marketCap: parseNumber(row[COLUMNS.MARKET_CAP]),
         peRatio: parseNumber(row[COLUMNS.PE_RATIO]) || null,
         beta: parseNumber(row[COLUMNS.BETA]) || null,
+        dividendYield: parseNumber(row[COLUMNS.DIVIDEND_YIELD]) || 0, // From "Divident Yeild" column
       };
 
-      // Only add if we have at least a symbol
-      if (stock.symbol || stock.visualSymbol) {
+      // Only add if we have at least a visual symbol
+      if (stock.visualSymbol) {
         stocks.push(stock);
       }
     }
@@ -104,7 +106,7 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
   }
 };
 
-// Search stocks by Visual Symbol or Symbol
+// Search stocks by Visual Symbol (primary) or Name
 export const searchStocksFromSheet = async (query) => {
   const stocks = await fetchStockDataFromSheet();
   const searchQuery = query.trim().toUpperCase();
@@ -116,27 +118,26 @@ export const searchStocksFromSheet = async (query) => {
   return stocks
     .filter(stock => {
       const visualSymbol = (stock.visualSymbol || '').toUpperCase();
-      const symbol = (stock.symbol || '').toUpperCase();
       const name = (stock.name || '').toUpperCase();
       
-      return visualSymbol.includes(searchQuery) ||
-             symbol.includes(searchQuery) ||
-             name.includes(searchQuery);
+      // Search primarily by Visual Symbol, then by name
+      return visualSymbol.includes(searchQuery) || name.includes(searchQuery);
     })
     .map(stock => ({
-      symbol: stock.symbol || stock.visualSymbol,
-      name: stock.name || stock.symbol || stock.visualSymbol,
+      symbol: stock.visualSymbol, // Use Visual Symbol as primary symbol for display
+      name: stock.name || stock.visualSymbol,
       exchange: stock.currency || 'USD',
       visualSymbol: stock.visualSymbol,
     }))
     .slice(0, 10);
 };
 
-// Get stock quote by symbol or visual symbol
-export const getStockQuoteFromSheet = async (symbolOrVisualSymbol) => {
+// Get stock quote by Visual Symbol (primary lookup method)
+export const getStockQuoteFromSheet = async (visualSymbolOrSymbol) => {
   const stocks = await fetchStockDataFromSheet();
-  const searchSymbol = symbolOrVisualSymbol.trim().toUpperCase();
+  const searchSymbol = visualSymbolOrSymbol.trim().toUpperCase();
 
+  // Prioritize Visual Symbol match, fallback to Symbol match
   const stock = stocks.find(s => {
     const visualSymbol = (s.visualSymbol || '').toUpperCase();
     const symbol = (s.symbol || '').toUpperCase();
@@ -144,14 +145,14 @@ export const getStockQuoteFromSheet = async (symbolOrVisualSymbol) => {
   });
 
   if (!stock) {
-    throw new Error(`Stock not found: ${symbolOrVisualSymbol}`);
+    throw new Error(`Stock not found: ${visualSymbolOrSymbol}`);
   }
 
   // Calculate previous close from price and change
   const previousClose = stock.price - stock.changeDollar;
 
   return {
-    symbol: stock.symbol || stock.visualSymbol,
+    symbol: stock.visualSymbol, // Use Visual Symbol as primary symbol for display
     visualSymbol: stock.visualSymbol,
     name: stock.name,
     price: stock.price,
@@ -169,7 +170,7 @@ export const getStockQuoteFromSheet = async (symbolOrVisualSymbol) => {
     marketCap: stock.marketCap,
     peRatio: stock.peRatio,
     beta: stock.beta,
-    dividendYield: 0, // Not in Sheet2, will need to add or use mock data
+    dividendYield: stock.dividendYield, // From Sheet2 "Divident Yeild" column
   };
 };
 

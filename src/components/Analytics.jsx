@@ -456,7 +456,9 @@ const Analytics = ({ refreshKey }) => {
                   {/* Stock Header with Price and Change */}
                   <div className="flex items-start justify-between">
                     <div>
-                      <h4 className="text-3xl font-bold text-white mb-1">{stock.ticker}</h4>
+                      <h4 className="text-3xl font-bold text-white mb-1">
+                        {stock.fullQuote?.symbol || stock.ticker}
+                      </h4>
                       {stock.fullQuote?.name && (
                         <p className="text-slate-400 text-sm">{stock.fullQuote.name}</p>
                       )}

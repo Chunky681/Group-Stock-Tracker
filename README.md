@@ -107,15 +107,16 @@ The Google Sheet stores data in the following format:
 | John     | AAPL   | 10     | 2024-01-15...|
 | Jane     | MSFT   | 5      | 2024-01-15...|
 
-## Stock API
+## Stock Data Source
 
-This app uses the Yahoo Finance API (free, no API key required) for stock data. If you need more reliability or features, you can:
+This app pulls stock data from Google Sheets **Sheet2**, which should contain comprehensive stock information including:
+- Visual Symbol (used for lookups and display)
+- Price, Change, Volume
+- Market Cap, P/E Ratio, Beta
+- Dividend Yield
+- 52-week High/Low ranges
 
-- **Alpha Vantage**: Free tier available, requires API key
-- **Polygon.io**: Free tier available, requires API key
-- **IEX Cloud**: Free tier available, requires API key
-
-To switch APIs, modify `src/utils/stockApi.js`.
+The app uses the **Visual Symbol** column for all stock lookups and displays. Make sure your Sheet1 (holdings) uses Visual Symbol values in the Ticker column.
 
 ## Technologies
 
