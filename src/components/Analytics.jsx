@@ -47,6 +47,20 @@ const Analytics = ({ refreshKey }) => {
       const quoteMap = {}; // Store full quote data with all metrics from Sheet2
       
       for (const ticker of uniqueTickers) {
+        // Handle CASH entries - they don't need stock data lookup
+        if (ticker === 'CASH' || ticker === 'USD') {
+          quoteMap[ticker] = {
+            price: 1.0, // Cash is always $1.00 per "share" (dollar)
+            dividendYield: 0,
+            changeDollar: 0,
+            changePercent: 0,
+            name: 'Cash',
+            symbol: 'CASH',
+            visualSymbol: 'CASH',
+          };
+          continue;
+        }
+        
         try {
           const quote = await getStockQuote(ticker);
           quoteMap[ticker] = quote; // Store full quote object with all Sheet2 data
@@ -68,6 +82,9 @@ const Analytics = ({ refreshKey }) => {
         const price = quote.price || 0;
         const dividendYield = quote.dividendYield || 0;
         
+        // For cash, the "shares" is actually the dollar amount, and price is $1.00
+        const isCash = ticker === 'CASH' || ticker === 'USD';
+        
         return {
           id: index + 1,
           username: row[0]?.trim() || '',
@@ -75,8 +92,9 @@ const Analytics = ({ refreshKey }) => {
           shares,
           price,
           dividendYield,
-          value: shares * price,
+          value: shares * price, // For cash: amount * 1.0 = amount
           yearlyDividend: shares * price * (dividendYield / 100),
+          isCash, // Flag to identify cash holdings
           // Store full quote data for detailed display
           fullQuote: quote,
         };
@@ -137,7 +155,7 @@ const Analytics = ({ refreshKey }) => {
     return filteredPortfolio.reduce((sum, item) => sum + (item.yearlyDividend || 0), 0);
   }, [filteredPortfolio]);
 
-  // Group by ticker and calculate total value per stock
+  // Group by ticker and calculate total value per stock (including cash)
   const stockTotals = useMemo(() => {
     const grouped = {};
     filteredPortfolio.forEach(item => {
@@ -149,6 +167,7 @@ const Analytics = ({ refreshKey }) => {
           price: item.price,
           dividendYield: item.dividendYield || 0,
           totalYearlyDividend: 0,
+          isCash: item.isCash || false,
           fullQuote: item.fullQuote || {}, // Store full quote data for detailed metrics
         };
       }
@@ -177,7 +196,7 @@ const Analytics = ({ refreshKey }) => {
       .sort((a, b) => b.value - a.value);
   }, [filteredPortfolio]);
 
-  // Data for stock distribution pie chart (by stock across all selected users)
+  // Data for stock distribution pie chart (by stock across all selected users, including cash)
   const totalValueByStock = useMemo(() => {
     const stockTotals = {};
     filteredPortfolio.forEach(item => {
@@ -189,7 +208,7 @@ const Analytics = ({ refreshKey }) => {
     
     return Object.entries(stockTotals)
       .map(([ticker, value]) => ({
-        name: ticker,
+        name: ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker,
         value: Number(value.toFixed(2)),
       }))
       .sort((a, b) => b.value - a.value);
@@ -230,7 +249,30 @@ const Analytics = ({ refreshKey }) => {
   };
 
   const renderLabel = (entry) => {
-    return `${entry.name}: ${((entry.value / totalValue) * 100).toFixed(1)}%`;
+    // Recharts passes an object with name, value, percent, etc.
+    if (!entry || !entry.name) return '';
+    
+    const name = entry.name;
+    const value = entry.value;
+    // Recharts provides percent as a decimal (0.041 = 4.1%)
+    const percent = entry.percent;
+    
+    // Use percent directly if available (Recharts calculates this automatically)
+    // If percent is not available, calculate it from totalValue as fallback
+    let percentValue = percent;
+    if (percentValue === undefined || percentValue === null || isNaN(percentValue)) {
+      if (totalValue > 0 && value) {
+        percentValue = value / totalValue;
+      } else {
+        percentValue = 0;
+      }
+    }
+    
+    // Hide label if percentage is less than 4% (0.04)
+    if (percentValue < 0.04) {
+      return '';
+    }
+    return `${name}: ${(percentValue * 100).toFixed(1)}%`;
   };
 
   if (isLoading) {
@@ -418,18 +460,18 @@ const Analytics = ({ refreshKey }) => {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {/* User Distribution Pie Chart */}
-            <div>
-              <h4 className="text-lg font-semibold text-white mb-4 text-center">By User</h4>
-              <div className="h-80">
+            <div className="flex flex-col">
+              <h4 className="text-lg font-semibold text-white mb-1 text-center">By User</h4>
+              <div className="flex-shrink-0" style={{ height: '384px' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPieChart>
+                  <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                     <Pie
                       data={totalValueByUser}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
                       label={renderLabel}
-                      outerRadius={120}
+                      outerRadius={100}
                       innerRadius={0}
                       startAngle={90}
                       endAngle={-270}
@@ -443,26 +485,38 @@ const Analytics = ({ refreshKey }) => {
                       ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend />
                   </RechartsPieChart>
                 </ResponsiveContainer>
+              </div>
+              <div className="flex-grow pt-1">
+                <div className="flex flex-wrap justify-center gap-4">
+                  {totalValueByUser.map((entry, index) => (
+                    <div key={`legend-${index}`} className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="text-sm text-slate-300">{entry.name}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
             {/* Stock Distribution Pie Chart */}
             {totalValueByStock.length > 0 && (
-              <div>
-                <h4 className="text-lg font-semibold text-white mb-4 text-center">By Stock</h4>
-                <div className="h-80">
+              <div className="flex flex-col">
+                <h4 className="text-lg font-semibold text-white mb-1 text-center">By Stock</h4>
+                <div className="flex-shrink-0" style={{ height: '384px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPieChart>
+                    <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                       <Pie
                         data={totalValueByStock}
                         cx="50%"
                         cy="50%"
                         labelLine={false}
                         label={renderLabel}
-                        outerRadius={120}
+                        outerRadius={100}
                         innerRadius={0}
                         startAngle={90}
                         endAngle={-270}
@@ -471,14 +525,36 @@ const Analytics = ({ refreshKey }) => {
                         fill="#8884d8"
                         dataKey="value"
                       >
-                        {totalValueByStock.map((entry, index) => (
-                          <Cell key={`stock-cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
-                        ))}
+                        {totalValueByStock.map((entry, index) => {
+                          // Always use green for Cash
+                          const isCash = entry.name === 'CASH';
+                          const fillColor = isCash ? '#22c55e' : COLORS[index % COLORS.length];
+                          return (
+                            <Cell key={`stock-cell-${index}`} fill={fillColor} stroke="none" />
+                          );
+                        })}
                       </Pie>
                       <Tooltip content={<CustomTooltip />} />
-                      <Legend />
                     </RechartsPieChart>
                   </ResponsiveContainer>
+                </div>
+                <div className="flex-grow pt-1">
+                  <div className="flex flex-wrap justify-center gap-4">
+                    {totalValueByStock.map((entry, index) => {
+                      // Always use green for Cash
+                      const isCash = entry.name === 'CASH';
+                      const color = isCash ? '#22c55e' : COLORS[index % COLORS.length];
+                      return (
+                        <div key={`legend-${index}`} className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: color }}
+                          />
+                          <span className={`text-sm ${isCash ? 'text-green-400' : 'text-slate-300'}`}>{entry.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -515,17 +591,21 @@ const Analytics = ({ refreshKey }) => {
                   <div className="flex items-start justify-between">
                     <div>
                       <h4 className="text-3xl font-bold text-white mb-1">
-                        {stock.fullQuote?.symbol || stock.ticker}
+                        {stock.isCash ? 'CASH' : (stock.fullQuote?.symbol || stock.ticker)}
                       </h4>
-                      {stock.fullQuote?.name && (
-                        <p className="text-slate-400 text-sm">{stock.fullQuote.name}</p>
+                      {stock.isCash ? (
+                        <p className="text-slate-400 text-sm">Cash Holdings</p>
+                      ) : (
+                        stock.fullQuote?.name && (
+                          <p className="text-slate-400 text-sm">{stock.fullQuote.name}</p>
+                        )
                       )}
                     </div>
                     <div className="text-right">
                       <div className="text-2xl font-bold text-white">
-                        ${stock.price.toFixed(2)}
+                        {stock.isCash ? '$1.00' : `$${stock.price.toFixed(2)}`}
                       </div>
-                      {stock.fullQuote?.changeDollar !== undefined && (
+                      {!stock.isCash && stock.fullQuote?.changeDollar !== undefined && (
                         <div className={`text-lg font-semibold ${
                           (stock.fullQuote.changeDollar || 0) >= 0 ? 'text-green-400' : 'text-red-400'
                         }`}>
@@ -547,8 +627,14 @@ const Analytics = ({ refreshKey }) => {
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-slate-400 mb-1">Total Shares</p>
-                      <p className="text-lg font-bold text-white">{stock.totalShares.toFixed(2)}</p>
+                      <p className="text-xs text-slate-400 mb-1">
+                        {stock.isCash ? 'Cash Amount' : 'Total Shares'}
+                      </p>
+                      <p className="text-lg font-bold text-white">
+                        {stock.isCash 
+                          ? `$${stock.totalShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : stock.totalShares.toFixed(2)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-400 mb-1">Dividend Yield</p>
@@ -564,8 +650,8 @@ const Analytics = ({ refreshKey }) => {
                     </div>
                   </div>
 
-                  {/* Comprehensive Stock Metrics */}
-                  {stock.fullQuote && (
+                  {/* Comprehensive Stock Metrics - Skip for cash */}
+                  {!stock.isCash && stock.fullQuote && (
                     <div className="grid md:grid-cols-2 gap-6">
                       {/* Price Range Chart */}
                       <div className="card p-4">
@@ -693,21 +779,25 @@ const Analytics = ({ refreshKey }) => {
                   {/* User Distribution - Pie Chart and Bar Chart */}
                   {distribution.length > 0 && (
                     <div className="grid md:grid-cols-2 gap-6 mt-6">
-                      <div>
-                        <h5 className="text-lg font-semibold text-white mb-4">
+                      <div className="flex flex-col">
+                        <h5 className="text-lg font-semibold text-white mb-1">
                           Distribution by User
                         </h5>
-                        <div className="h-64">
+                        <div className="flex-shrink-0" style={{ height: '256px' }}>
                           <ResponsiveContainer width="100%" height="100%">
-                            <RechartsPieChart>
+                            <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                               <Pie
                                 data={distribution}
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
-                                label={({ name, value, percent }) => 
-                                  `${name}: ${(percent * 100).toFixed(1)}%`
-                                }
+                                label={({ name, value, percent }) => {
+                                  // Hide label if percentage is less than 4%
+                                  if (percent < 0.04) {
+                                    return '';
+                                  }
+                                  return `${name}: ${(percent * 100).toFixed(1)}%`;
+                                }}
                                 outerRadius={80}
                                 innerRadius={0}
                                 startAngle={90}
@@ -722,9 +812,21 @@ const Analytics = ({ refreshKey }) => {
                                 ))}
                               </Pie>
                               <Tooltip content={<CustomTooltip />} />
-                              <Legend />
                             </RechartsPieChart>
                           </ResponsiveContainer>
+                        </div>
+                        <div className="flex-grow pt-1">
+                          <div className="flex flex-wrap justify-center gap-4">
+                            {distribution.map((entry, index) => (
+                              <div key={`legend-${index}`} className="flex items-center gap-2">
+                                <div 
+                                  className="w-3 h-3 rounded-full" 
+                                  style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                />
+                                <span className="text-sm text-slate-300">{entry.name}</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                       <div>

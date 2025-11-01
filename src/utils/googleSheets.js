@@ -163,6 +163,65 @@ export const updateRow = async (rowIndex, rowData) => {
   }
 };
 
+export const deleteRow = async (rowIndex) => {
+  const sheetId = getSheetId();
+  
+  if (!sheetId) {
+    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
+  }
+
+  // Get OAuth access token (will initialize and prompt user login if needed)
+  let accessToken;
+  try {
+    await initializeGoogleAuth();
+    accessToken = await getAccessToken();
+  } catch (error) {
+    console.error('OAuth error:', error);
+    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
+  }
+
+  // Use the Google Sheets API v4 batchUpdate to delete a row
+  try {
+    const response = await fetch(
+      `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: 0, // Sheet1 is typically sheetId 0
+                  dimension: 'ROWS',
+                  startIndex: rowIndex - 1, // Convert 1-based to 0-based index
+                  endIndex: rowIndex, // Delete just one row
+                },
+              },
+            },
+          ],
+        }),
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      const errorMsg = data.error?.message || `HTTP ${response.status}`;
+      console.error('Google Sheets API error:', data);
+      throw new Error(`Failed to delete row: ${errorMsg}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error deleting row:', error);
+    throw error;
+  }
+};
+
 export const initializeSheet = async () => {
   try {
     const data = await readSheetData('Sheet1!A1:D1');

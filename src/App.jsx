@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, User, Search, BarChart3 } from 'lucide-react';
+import { TrendingUp, User, Search, BarChart3, DollarSign } from 'lucide-react';
 import StockSearch from './components/StockSearch';
 import AddStockForm from './components/AddStockForm';
+import AddCashForm from './components/AddCashForm';
 import UserSelector from './components/UserSelector';
 import UserHoldings from './components/UserHoldings';
 import Analytics from './components/Analytics';
@@ -13,6 +14,7 @@ function App() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' or 'stocks'
   const [portfolioKey, setPortfolioKey] = useState(0);
+  const [addType, setAddType] = useState('stock'); // 'stock' or 'cash'
 
   const handleStockSelected = (stockData) => {
     setSelectedStock(stockData);
@@ -173,16 +175,68 @@ function App() {
                         />
 
                         <div className="border-t border-slate-700 pt-6">
-                          <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                            <Search className="w-5 h-5 text-primary-400" />
-                            Add New Stock
-                          </h4>
-                          <StockSearch onStockSelected={handleStockSelected} />
-                          <AddStockForm 
-                            stockData={selectedStock} 
-                            selectedUser={selectedUser}
-                            onSuccess={handleStockAdded} 
-                          />
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                              {addType === 'stock' ? (
+                                <>
+                                  <Search className="w-5 h-5 text-primary-400" />
+                                  Add New Stock
+                                </>
+                              ) : (
+                                <>
+                                  <DollarSign className="w-5 h-5 text-green-500" />
+                                  Add Cash Holdings
+                                </>
+                              )}
+                            </h4>
+                            <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddType('stock');
+                                  setSelectedStock(null);
+                                }}
+                                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                                  addType === 'stock'
+                                    ? 'bg-primary-500 text-white'
+                                    : 'text-slate-400 hover:text-slate-300'
+                                }`}
+                              >
+                                Stock
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddType('cash');
+                                  setSelectedStock(null);
+                                }}
+                                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                                  addType === 'cash'
+                                    ? 'bg-green-500 text-white'
+                                    : 'text-slate-400 hover:text-slate-300'
+                                }`}
+                              >
+                                Cash
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {addType === 'stock' ? (
+                            <>
+                              <StockSearch onStockSelected={handleStockSelected} />
+                              <AddStockForm 
+                                stockData={selectedStock} 
+                                selectedUser={selectedUser}
+                                onSuccess={handleStockAdded} 
+                              />
+                            </>
+                          ) : (
+                            <AddCashForm
+                              selectedUser={selectedUser}
+                              onSuccess={handleStockAdded}
+                              refreshKey={portfolioKey}
+                            />
+                          )}
                         </div>
                       </motion.div>
                     </div>

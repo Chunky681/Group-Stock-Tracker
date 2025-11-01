@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Edit2, Save, X, TrendingUp, DollarSign, RefreshCw, Plus } from 'lucide-react';
-import { readSheetData, updateRow, initializeSheet } from '../utils/googleSheets';
+import { Edit2, Save, X, TrendingUp, DollarSign, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { readSheetData, updateRow, initializeSheet, deleteRow } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
 const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
@@ -11,8 +11,10 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
   const [editingTicker, setEditingTicker] = useState(null);
   const [editShares, setEditShares] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null); // Track which ticker is being deleted
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [sheetData, setSheetData] = useState([]); // Store raw sheet data to find row indices
+  const [allRowIndices, setAllRowIndices] = useState(new Map()); // Store all row indices for each ticker
 
   useEffect(() => {
     if (selectedUser) {
@@ -44,8 +46,14 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       const uniqueTickers = [...new Set(userRows.map(row => row[1]?.trim().toUpperCase()))];
       const priceMap = {};
       
-      // Fetch prices for all tickers
+      // Fetch prices for all tickers (skip CASH/USD)
       for (const ticker of uniqueTickers) {
+        // Handle cash - price is always $1.00
+        if (ticker === 'CASH' || ticker === 'USD') {
+          priceMap[ticker] = 1.0;
+          continue;
+        }
+        
         try {
           const quote = await getStockQuote(ticker);
           priceMap[ticker] = quote.price;
@@ -55,38 +63,54 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
         }
       }
       
-      // Group by ticker and sum shares, keeping track of the first row index for each ticker
+      // Group by ticker and sum shares, keeping track of all row indices for each ticker
       const holdingsMap = new Map();
+      const rowIndicesMap = new Map(); // Track all row indices for each ticker
+      
+      // First, collect all row indices for each ticker
+      userRows.forEach((row, rowIdx) => {
+        const ticker = row[1]?.trim().toUpperCase() || '';
+        const username = row[0]?.trim() || '';
+        
+        // Find all matching rows in the full data array
+        const matchingRows = [];
+        data.forEach((r, idx) => {
+          if (idx > 0 && // Skip header
+              r && r.length >= 3 &&
+              r[0]?.trim().toLowerCase() === username.toLowerCase() &&
+              r[1]?.trim().toUpperCase() === ticker) {
+            matchingRows.push(idx + 1); // +1 because sheet rows are 1-indexed (header is row 1)
+          }
+        });
+        
+        if (matchingRows.length > 0) {
+          rowIndicesMap.set(ticker, matchingRows);
+        }
+      });
+      
+      // Now group by ticker and sum shares
       userRows.forEach((row) => {
         const ticker = row[1]?.trim().toUpperCase() || '';
         const shares = parseFloat(row[2]) || 0;
-        const username = row[0]?.trim() || '';
-        
-        // Find the actual row index in the full data array by matching username and ticker
-        // Skip header row (index 0), so start from index 1
-        const rowIndexInData = data.findIndex((r, idx) => 
-          idx > 0 && 
-          r && r.length >= 3 &&
-          r[0]?.trim().toLowerCase() === username.toLowerCase() &&
-          r[1]?.trim().toUpperCase() === ticker
-        );
-        
-        const sheetRowIndex = rowIndexInData > 0 ? rowIndexInData + 1 : null; // +1 because sheet rows are 1-indexed (header is row 1)
         
         if (holdingsMap.has(ticker)) {
           const existing = holdingsMap.get(ticker);
           existing.shares += shares;
-          // Keep the first row index found for this ticker (for updates)
         } else {
+          const isCash = ticker === 'CASH' || ticker === 'USD';
+          const rowIndices = rowIndicesMap.get(ticker) || [];
           holdingsMap.set(ticker, {
             ticker,
             shares,
             price: priceMap[ticker] || 0,
             value: shares * (priceMap[ticker] || 0),
-            rowIndex: sheetRowIndex, // Store row index for updates
+            rowIndex: rowIndices[0] || null, // Store first row index for updates
+            isCash, // Flag to identify cash holdings
           });
         }
       });
+      
+      setAllRowIndices(rowIndicesMap);
       
       const holdingsArray = Array.from(holdingsMap.values())
         .sort((a, b) => a.ticker.localeCompare(b.ticker));
@@ -107,6 +131,12 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       const priceMap = {};
       
       for (const ticker of uniqueTickers) {
+        // Handle cash - price is always $1.00
+        if (ticker === 'CASH' || ticker === 'USD') {
+          priceMap[ticker] = 1.0;
+          continue;
+        }
+        
         try {
           const quote = await getStockQuote(ticker);
           priceMap[ticker] = quote.price;
@@ -140,12 +170,48 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
     setEditShares('');
   };
 
+  const handleDelete = async (ticker) => {
+    if (!window.confirm(`Are you sure you want to delete ${ticker === 'CASH' || ticker === 'USD' ? 'cash holdings' : ticker}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setIsDeleting(ticker);
+    setError(null);
+    
+    try {
+      const rowIndices = allRowIndices.get(ticker) || [];
+      
+      if (rowIndices.length === 0) {
+        throw new Error('No rows found to delete');
+      }
+      
+      // Delete rows in reverse order to maintain correct indices
+      const sortedIndices = [...rowIndices].sort((a, b) => b - a);
+      
+      for (const rowIndex of sortedIndices) {
+        await deleteRow(rowIndex);
+      }
+      
+      // Reload holdings after deletion
+      if (onUpdate) {
+        onUpdate();
+      }
+      await loadHoldings();
+      
+    } catch (error) {
+      console.error('Error deleting holding:', error);
+      setError(error.message || 'Failed to delete holding. Please try again.');
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
   const handleSaveEdit = async () => {
     if (editingTicker === null) return;
     
     const sharesNum = parseFloat(editShares);
-    if (isNaN(sharesNum) || sharesNum < 0) {
-      setError('Please enter a valid number of shares (0 or greater)');
+    if (isNaN(sharesNum) || sharesNum <= 0) {
+      setError('Please enter a valid amount greater than 0. To remove a holding, use the Delete button.');
       return;
     }
     
@@ -323,27 +389,41 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <h4 className="text-xl font-bold text-white mb-2">{holding.ticker}</h4>
+                  <div className="flex items-center gap-2 mb-2">
+                    {holding.isCash && (
+                      <DollarSign className="w-5 h-5 text-green-500" />
+                    )}
+                    <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : 'text-white'}`}>
+                      {holding.isCash ? 'CASH' : holding.ticker}
+                    </h4>
+                  </div>
                   <p className="text-slate-400 text-sm mb-3">
-                    ${holding.price.toFixed(2)} per share
+                    {holding.isCash 
+                      ? 'Cash Holdings'
+                      : `$${holding.price.toFixed(2)} per share`}
                   </p>
                   
                   {editingTicker === holding.ticker ? (
                     <div className="flex items-center gap-3 mt-4">
-                      <input
-                        type="number"
-                        value={editShares}
-                        onChange={(e) => {
-                          setEditShares(e.target.value);
-                          setError(null);
-                        }}
-                        placeholder="0.00"
-                        className="input-field w-32"
-                        min="0"
-                        step="0.01"
-                        autoFocus
-                        disabled={isSaving}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs text-slate-400">
+                          {holding.isCash ? 'Cash Amount ($)' : 'Number of Shares'}
+                        </label>
+                        <input
+                          type="number"
+                          value={editShares}
+                          onChange={(e) => {
+                            setEditShares(e.target.value);
+                            setError(null);
+                          }}
+                          placeholder={holding.isCash ? "0.00" : "0.00"}
+                          className="input-field w-32"
+                          min="0.01"
+                          step="0.01"
+                          autoFocus
+                          disabled={isSaving}
+                        />
+                      </div>
                       <motion.button
                         onClick={handleSaveEdit}
                         disabled={isSaving}
@@ -377,9 +457,13 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                   ) : (
                     <div className="flex items-center gap-6 mt-4">
                       <div>
-                        <p className="text-sm text-slate-400 mb-1">Shares</p>
+                        <p className="text-sm text-slate-400 mb-1">
+                          {holding.isCash ? 'Cash Amount' : 'Shares'}
+                        </p>
                         <p className="text-lg font-semibold text-white">
-                          {holding.shares.toFixed(2)}
+                          {holding.isCash 
+                            ? `$${holding.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : holding.shares.toFixed(2)}
                         </p>
                       </div>
                       <div>
@@ -396,6 +480,25 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                       >
                         <Edit2 className="w-4 h-4" />
                         Edit
+                      </motion.button>
+                      <motion.button
+                        onClick={() => handleDelete(holding.ticker)}
+                        disabled={isDeleting === holding.ticker}
+                        className="btn-secondary flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50"
+                        whileHover={{ scale: isDeleting === holding.ticker ? 1 : 1.05 }}
+                        whileTap={{ scale: isDeleting === holding.ticker ? 1 : 0.95 }}
+                      >
+                        {isDeleting === holding.ticker ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </>
+                        )}
                       </motion.button>
                     </div>
                   )}

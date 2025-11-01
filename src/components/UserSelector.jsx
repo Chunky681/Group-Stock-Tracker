@@ -27,8 +27,14 @@ const UserSelector = ({ selectedUser, onUserSelect, refreshKey, compact = false 
       const uniqueTickers = [...new Set(rows.map(row => row[1]?.trim().toUpperCase()))];
       const priceMap = {};
       
-      // Fetch prices for all tickers
+      // Fetch prices for all tickers (handle cash separately)
       for (const ticker of uniqueTickers) {
+        // Cash is always $1.00 per "share" (dollar)
+        if (ticker === 'CASH' || ticker === 'USD') {
+          priceMap[ticker] = 1.0;
+          continue;
+        }
+        
         try {
           const quote = await getStockQuote(ticker);
           priceMap[ticker] = quote.price;
