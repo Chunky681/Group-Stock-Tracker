@@ -128,7 +128,7 @@ export const getAccessToken = async () => {
   }
 
   if (!GOOGLE_CLIENT_ID) {
-    throw new Error('Google OAuth not configured. Please add VITE_GOOGLE_CLIENT_ID to your .env file. See instructions in env.example');
+    throw new Error('Google OAuth not configured. Please add VITE_GOOGLE_CLIENT_ID to your .env file.');
   }
 
   return new Promise((resolve, reject) => {
