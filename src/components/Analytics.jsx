@@ -44,22 +44,30 @@ const Analytics = ({ refreshKey }) => {
       }
       
       const uniqueTickers = [...new Set(rows.map(row => row[1]?.trim().toUpperCase()))];
-      const priceMap = {};
+      const quoteMap = {}; // Store full quote data including dividendYield
       
       for (const ticker of uniqueTickers) {
         try {
           const quote = await getStockQuote(ticker);
-          priceMap[ticker] = quote.price;
+          quoteMap[ticker] = {
+            price: quote.price,
+            dividendYield: quote.dividendYield || 0,
+          };
         } catch (error) {
           console.error(`Error fetching price for ${ticker}:`, error);
-          priceMap[ticker] = 0;
+          quoteMap[ticker] = {
+            price: 0,
+            dividendYield: 0,
+          };
         }
       }
       
       const portfolioData = rows.map((row, index) => {
         const ticker = row[1]?.trim().toUpperCase() || '';
         const shares = parseFloat(row[2]) || 0;
-        const price = priceMap[ticker] || 0;
+        const quote = quoteMap[ticker] || { price: 0, dividendYield: 0 };
+        const price = quote.price || 0;
+        const dividendYield = quote.dividendYield || 0;
         
         return {
           id: index + 1,
@@ -67,7 +75,9 @@ const Analytics = ({ refreshKey }) => {
           ticker,
           shares,
           price,
+          dividendYield,
           value: shares * price,
+          yearlyDividend: shares * price * (dividendYield / 100), // Calculate yearly dividend payout
         };
       });
       
@@ -121,6 +131,11 @@ const Analytics = ({ refreshKey }) => {
     return filteredPortfolio.reduce((sum, item) => sum + item.value, 0);
   }, [filteredPortfolio]);
 
+  // Calculate total yearly dividend for selected users
+  const totalYearlyDividend = useMemo(() => {
+    return filteredPortfolio.reduce((sum, item) => sum + (item.yearlyDividend || 0), 0);
+  }, [filteredPortfolio]);
+
   // Group by ticker and calculate total value per stock
   const stockTotals = useMemo(() => {
     const grouped = {};
@@ -131,10 +146,13 @@ const Analytics = ({ refreshKey }) => {
           totalValue: 0,
           totalShares: 0,
           price: item.price,
+          dividendYield: item.dividendYield || 0,
+          totalYearlyDividend: 0,
         };
       }
       grouped[item.ticker].totalValue += item.value;
       grouped[item.ticker].totalShares += item.shares;
+      grouped[item.ticker].totalYearlyDividend += item.yearlyDividend || 0;
     });
     return Object.values(grouped).sort((a, b) => b.totalValue - a.totalValue);
   }, [filteredPortfolio]);
@@ -315,29 +333,56 @@ const Analytics = ({ refreshKey }) => {
         </div>
       </motion.div>
 
-      {/* Total Value */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="card p-6"
-      >
-        <div className="text-center">
-          <p className="text-slate-400 mb-2">Total Portfolio Value</p>
-          <motion.p
-            key={totalValue}
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ type: 'spring', stiffness: 200 }}
-            className="text-5xl font-bold text-white mb-4"
+      {/* Total Value and Dividends */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="card p-6"
+        >
+          <div className="text-center">
+            <p className="text-slate-400 mb-2">Total Portfolio Value</p>
+            <motion.p
+              key={totalValue}
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 200 }}
+              className="text-5xl font-bold text-white mb-4"
+            >
+              ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </motion.p>
+            <p className="text-sm text-slate-500">
+              Across {selectedUsers.size} {selectedUsers.size === 1 ? 'user' : 'users'}
+            </p>
+          </div>
+        </motion.div>
+
+        {totalYearlyDividend > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="card p-6"
           >
-            ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </motion.p>
-          <p className="text-sm text-slate-500">
-            Across {selectedUsers.size} {selectedUsers.size === 1 ? 'user' : 'users'}
-          </p>
-        </div>
-      </motion.div>
+            <div className="text-center">
+              <p className="text-slate-400 mb-2">Estimated Yearly Dividend</p>
+              <motion.p
+                key={totalYearlyDividend}
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200 }}
+                className="text-5xl font-bold text-primary-400 mb-4"
+              >
+                ${totalYearlyDividend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </motion.p>
+              <p className="text-sm text-slate-500">
+                Based on current dividend yields
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </div>
 
       {/* Total Value Distribution Pie Chart */}
       {totalValueByUser.length > 0 && (
@@ -420,6 +465,20 @@ const Analytics = ({ refreshKey }) => {
                           <span className="text-slate-400">Price per Share:</span>
                           <span className="text-white font-semibold">${stock.price.toFixed(2)}</span>
                         </div>
+                        {stock.dividendYield > 0 && (
+                          <>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Dividend Yield:</span>
+                              <span className="text-white font-semibold">{stock.dividendYield.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
+                              <span className="text-slate-300 font-medium">Estimated Yearly Dividend:</span>
+                              <span className="text-primary-400 font-bold">
+                                ${stock.totalYearlyDividend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>

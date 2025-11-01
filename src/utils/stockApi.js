@@ -129,6 +129,7 @@ export const getStockQuote = async (ticker) => {
       previousClose: Number(previousClose.toFixed(2)),
       change: Number(change.toFixed(2)),
       changePercent: Number(changePercent.toFixed(2)),
+      dividendYield: 0, // Alpha Vantage GLOBAL_QUOTE doesn't provide dividend yield, use mock data fallback
     };
   } catch (error) {
     console.error('Error fetching stock quote:', error);
