@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, PieChart, Users, TrendingUp, Check } from 'lucide-react';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { readSheetData, initializeSheet } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
@@ -44,20 +44,19 @@ const Analytics = ({ refreshKey }) => {
       }
       
       const uniqueTickers = [...new Set(rows.map(row => row[1]?.trim().toUpperCase()))];
-      const quoteMap = {}; // Store full quote data including dividendYield
+      const quoteMap = {}; // Store full quote data with all metrics from Sheet2
       
       for (const ticker of uniqueTickers) {
         try {
           const quote = await getStockQuote(ticker);
-          quoteMap[ticker] = {
-            price: quote.price,
-            dividendYield: quote.dividendYield || 0,
-          };
+          quoteMap[ticker] = quote; // Store full quote object with all Sheet2 data
         } catch (error) {
           console.error(`Error fetching price for ${ticker}:`, error);
           quoteMap[ticker] = {
             price: 0,
             dividendYield: 0,
+            changeDollar: 0,
+            changePercent: 0,
           };
         }
       }
@@ -77,7 +76,9 @@ const Analytics = ({ refreshKey }) => {
           price,
           dividendYield,
           value: shares * price,
-          yearlyDividend: shares * price * (dividendYield / 100), // Calculate yearly dividend payout
+          yearlyDividend: shares * price * (dividendYield / 100),
+          // Store full quote data for detailed display
+          fullQuote: quote,
         };
       });
       
@@ -148,6 +149,7 @@ const Analytics = ({ refreshKey }) => {
           price: item.price,
           dividendYield: item.dividendYield || 0,
           totalYearlyDividend: 0,
+          fullQuote: item.fullQuote || {}, // Store full quote data for detailed metrics
         };
       }
       grouped[item.ticker].totalValue += item.value;
@@ -450,78 +452,243 @@ const Analytics = ({ refreshKey }) => {
                 transition={{ delay: 0.5 + stockIndex * 0.1 }}
                 className="border-t border-slate-700 pt-6 first:border-t-0 first:pt-0"
               >
-                <div className="grid md:grid-cols-2 gap-6">
-                  {/* Stock Info */}
-                  <div>
-                    <div className="mb-4">
-                      <h4 className="text-2xl font-bold text-white mb-2">{stock.ticker}</h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Total Value:</span>
-                          <span className="text-white font-semibold">
-                            ${stock.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Total Shares:</span>
-                          <span className="text-white font-semibold">{stock.totalShares.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Price per Share:</span>
-                          <span className="text-white font-semibold">${stock.price.toFixed(2)}</span>
-                        </div>
-                        {stock.dividendYield > 0 && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Dividend Yield:</span>
-                              <span className="text-white font-semibold">{stock.dividendYield.toFixed(2)}%</span>
-                            </div>
-                            <div className="flex justify-between border-t border-slate-700 pt-2 mt-2">
-                              <span className="text-slate-300 font-medium">Estimated Yearly Dividend:</span>
-                              <span className="text-primary-400 font-bold">
-                                ${stock.totalYearlyDividend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                          </>
-                        )}
+                <div className="space-y-6">
+                  {/* Stock Header with Price and Change */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-3xl font-bold text-white mb-1">{stock.ticker}</h4>
+                      {stock.fullQuote?.name && (
+                        <p className="text-slate-400 text-sm">{stock.fullQuote.name}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-white">
+                        ${stock.price.toFixed(2)}
                       </div>
+                      {stock.fullQuote?.changeDollar !== undefined && (
+                        <div className={`text-lg font-semibold ${
+                          (stock.fullQuote.changeDollar || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                          {(stock.fullQuote.changeDollar || 0) >= 0 ? '+' : ''}
+                          ${(stock.fullQuote.changeDollar || 0).toFixed(2)} (
+                          {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
+                          {(stock.fullQuote.changePercent || 0).toFixed(2)}%)
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
-                  {/* Pie Chart for Stock Distribution */}
-                  {distribution.length > 0 && (
+
+                  {/* Portfolio Holdings Summary */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
                     <div>
-                      <h5 className="text-lg font-semibold text-white mb-4">
-                        Distribution by User
-                      </h5>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <RechartsPieChart>
-                            <Pie
-                              data={distribution}
-                              cx="50%"
-                              cy="50%"
-                              labelLine={false}
-                              label={({ name, value, percent }) => 
-                                `${name}: ${(percent * 100).toFixed(1)}%`
-                              }
-                              outerRadius={80}
-                              innerRadius={0}
-                              startAngle={90}
-                              endAngle={-270}
-                              paddingAngle={0}
-                              stroke="none"
-                              fill="#8884d8"
-                              dataKey="value"
-                            >
-                              {distribution.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
-                              ))}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip />} />
-                            <Legend />
-                          </RechartsPieChart>
-                        </ResponsiveContainer>
+                      <p className="text-xs text-slate-400 mb-1">Total Value</p>
+                      <p className="text-lg font-bold text-white">
+                        ${stock.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Total Shares</p>
+                      <p className="text-lg font-bold text-white">{stock.totalShares.toFixed(2)}</p>
+                    </div>
+                    {stock.dividendYield > 0 && (
+                      <>
+                        <div>
+                          <p className="text-xs text-slate-400 mb-1">Dividend Yield</p>
+                          <p className="text-lg font-bold text-white">{stock.dividendYield.toFixed(2)}%</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400 mb-1">Yearly Dividend</p>
+                          <p className="text-lg font-bold text-primary-400">
+                            ${stock.totalYearlyDividend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Comprehensive Stock Metrics */}
+                  {stock.fullQuote && (
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Price Range Chart */}
+                      <div className="card p-4">
+                        <h5 className="text-sm font-semibold text-white mb-4">Price Range</h5>
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex justify-between text-xs text-slate-400 mb-1">
+                              <span>Day Low</span>
+                              <span>Day High</span>
+                            </div>
+                            <div className="relative h-3 bg-slate-700 rounded-full overflow-hidden">
+                              {stock.fullQuote.dayLow && stock.fullQuote.dayHigh && stock.fullQuote.price && (
+                                <>
+                                  <div 
+                                    className="absolute h-full bg-primary-500/30"
+                                    style={{
+                                      left: '0%',
+                                      width: `${((stock.fullQuote.price - stock.fullQuote.dayLow) / (stock.fullQuote.dayHigh - stock.fullQuote.dayLow)) * 100}%`
+                                    }}
+                                  />
+                                  <div 
+                                    className="absolute top-0 h-full w-1 bg-primary-400"
+                                    style={{
+                                      left: `${((stock.fullQuote.price - stock.fullQuote.dayLow) / (stock.fullQuote.dayHigh - stock.fullQuote.dayLow)) * 100}%`
+                                    }}
+                                  />
+                                </>
+                              )}
+                            </div>
+                            <div className="flex justify-between text-xs text-white mt-1">
+                              <span>${(stock.fullQuote.dayLow || 0).toFixed(2)}</span>
+                              <span className="text-primary-400 font-semibold">${stock.price.toFixed(2)}</span>
+                              <span>${(stock.fullQuote.dayHigh || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="pt-3 border-t border-slate-700">
+                            <div className="flex justify-between text-xs text-slate-400 mb-1">
+                              <span>52w Low</span>
+                              <span>52w High</span>
+                            </div>
+                            <div className="relative h-3 bg-slate-700 rounded-full overflow-hidden">
+                              {stock.fullQuote.week52Low && stock.fullQuote.week52High && stock.price && (
+                                <>
+                                  <div 
+                                    className="absolute h-full bg-green-500/20"
+                                    style={{
+                                      left: '0%',
+                                      width: `${((stock.price - stock.fullQuote.week52Low) / (stock.fullQuote.week52High - stock.fullQuote.week52Low)) * 100}%`
+                                    }}
+                                  />
+                                  <div 
+                                    className="absolute top-0 h-full w-1 bg-green-400"
+                                    style={{
+                                      left: `${((stock.price - stock.fullQuote.week52Low) / (stock.fullQuote.week52High - stock.fullQuote.week52Low)) * 100}%`
+                                    }}
+                                  />
+                                </>
+                              )}
+                            </div>
+                            <div className="flex justify-between text-xs text-white mt-1">
+                              <span>${(stock.fullQuote.week52Low || 0).toFixed(2)}</span>
+                              <span className="text-green-400 font-semibold">${stock.price.toFixed(2)}</span>
+                              <span>${(stock.fullQuote.week52High || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Key Metrics Grid */}
+                      <div className="card p-4">
+                        <h5 className="text-sm font-semibold text-white mb-4">Key Metrics</h5>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-2 bg-slate-800/50 rounded">
+                            <p className="text-xs text-slate-400 mb-1">Price Open</p>
+                            <p className="text-sm font-bold text-white">${(stock.fullQuote.priceOpen || 0).toFixed(2)}</p>
+                          </div>
+                          {(stock.fullQuote.volume || 0) > 0 && (
+                            <div className="p-2 bg-slate-800/50 rounded">
+                              <p className="text-xs text-slate-400 mb-1">Volume</p>
+                              <p className="text-sm font-bold text-white">
+                                {stock.fullQuote.volume >= 1000000 
+                                  ? `${(stock.fullQuote.volume / 1000000).toFixed(2)}M`
+                                  : stock.fullQuote.volume >= 1000
+                                  ? `${(stock.fullQuote.volume / 1000).toFixed(2)}K`
+                                  : stock.fullQuote.volume.toLocaleString()}
+                              </p>
+                            </div>
+                          )}
+                          {(stock.fullQuote.marketCap || 0) > 0 && (
+                            <div className="p-2 bg-slate-800/50 rounded">
+                              <p className="text-xs text-slate-400 mb-1">Market Cap</p>
+                              <p className="text-sm font-bold text-white">
+                                {stock.fullQuote.marketCap >= 1000000000
+                                  ? `$${(stock.fullQuote.marketCap / 1000000000).toFixed(2)}B`
+                                  : stock.fullQuote.marketCap >= 1000000
+                                  ? `$${(stock.fullQuote.marketCap / 1000000).toFixed(2)}M`
+                                  : `$${stock.fullQuote.marketCap.toLocaleString()}`}
+                              </p>
+                            </div>
+                          )}
+                          {stock.fullQuote.peRatio && (
+                            <div className="p-2 bg-slate-800/50 rounded">
+                              <p className="text-xs text-slate-400 mb-1">P/E Ratio</p>
+                              <p className="text-sm font-bold text-white">{stock.fullQuote.peRatio.toFixed(2)}</p>
+                            </div>
+                          )}
+                          {stock.fullQuote.beta && (
+                            <div className="p-2 bg-slate-800/50 rounded">
+                              <p className="text-xs text-slate-400 mb-1">Beta</p>
+                              <p className="text-sm font-bold text-white">{stock.fullQuote.beta.toFixed(2)}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* User Distribution - Pie Chart and Bar Chart */}
+                  {distribution.length > 0 && (
+                    <div className="grid md:grid-cols-2 gap-6 mt-6">
+                      <div>
+                        <h5 className="text-lg font-semibold text-white mb-4">
+                          Distribution by User
+                        </h5>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsPieChart>
+                              <Pie
+                                data={distribution}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                label={({ name, value, percent }) => 
+                                  `${name}: ${(percent * 100).toFixed(1)}%`
+                                }
+                                outerRadius={80}
+                                innerRadius={0}
+                                startAngle={90}
+                                endAngle={-270}
+                                paddingAngle={0}
+                                stroke="none"
+                                fill="#8884d8"
+                                dataKey="value"
+                              >
+                                {distribution.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
+                                ))}
+                              </Pie>
+                              <Tooltip content={<CustomTooltip />} />
+                              <Legend />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <div>
+                        <h5 className="text-lg font-semibold text-white mb-4">
+                          Value by User
+                        </h5>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={distribution}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                              <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                              <YAxis stroke="#94a3b8" fontSize={12} />
+                              <Tooltip 
+                                contentStyle={{ 
+                                  backgroundColor: '#1e293b', 
+                                  border: '1px solid #475569',
+                                  borderRadius: '8px'
+                                }}
+                                formatter={(value) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Value']}
+                              />
+                              <Bar dataKey="value" fill="#0ea5e9" radius={[8, 8, 0, 0]}>
+                                {distribution.map((entry, index) => (
+                                  <Cell key={`bar-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     </div>
                   )}
