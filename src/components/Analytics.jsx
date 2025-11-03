@@ -1255,6 +1255,8 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                 value: totalValue,
                 fullDate: `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`,
                 dateObj: dateObj,
+                // Store timestamp for better X-axis positioning and snapping
+                timestamp: dateObj.getTime(),
               };
             })
             .sort((a, b) => a.dateObj - b.dateObj);
@@ -1268,6 +1270,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
           if (lastPointTime && lastPointTime.getTime() === lastHour.getTime()) {
             // Update the last point with current value
             result[result.length - 1].value = currentTotalValue || 0;
+            result[result.length - 1].timestamp = lastHour.getTime();
           } else {
             // Add current value as new point
             result.push({
@@ -1275,6 +1278,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               value: currentTotalValue || 0,
               fullDate: todayDateStr,
               dateObj: lastHour,
+              timestamp: lastHour.getTime(),
             });
           }
         } else if (timePeriod === '1W') {
@@ -1384,19 +1388,93 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               value: item.totalValue,
               fullDate: item.date,
               dateObj: item.dateObj,
+              // Store timestamp for better X-axis positioning and snapping
+              timestamp: item.dateObj.getTime(),
             }));
         }
       }
     }
     
-    // Always add today's point with the current Total Portfolio Value (except for 1D which already has it)
+    // Always add/update today's point with the current Total Portfolio Value (except for 1D which already has it)
     if (timePeriod !== '1D') {
-      result.push({
-        date: formatDateForChart(todayDateObj, timePeriod),
-        value: currentTotalValue || 0,
-        fullDate: todayDateStr,
-        dateObj: todayDateObj,
+      // Normalize today's date for comparison (midnight)
+      const todayMidnight = new Date(todayDateObj.getFullYear(), todayDateObj.getMonth(), todayDateObj.getDate());
+      
+      // Check if today's point already exists (compare by normalized date string)
+      const todayPointIndex = result.findIndex(item => {
+        if (item.dateObj instanceof Date) {
+          const itemMidnight = new Date(item.dateObj.getFullYear(), item.dateObj.getMonth(), item.dateObj.getDate());
+          return itemMidnight.getTime() === todayMidnight.getTime();
+        }
+        // Fallback: compare date strings
+        return item.fullDate === todayDateStr;
       });
+      
+      if (todayPointIndex >= 0) {
+        // Update existing today's point with current value
+        result[todayPointIndex].value = currentTotalValue || 0;
+        result[todayPointIndex].dateObj = todayDateObj;
+        result[todayPointIndex].timestamp = todayDateObj.getTime();
+        result[todayPointIndex].date = formatDateForChart(todayDateObj, timePeriod);
+      } else {
+        // Add new today's point
+        result.push({
+          date: formatDateForChart(todayDateObj, timePeriod),
+          value: currentTotalValue || 0,
+          fullDate: todayDateStr,
+          dateObj: todayDateObj,
+          timestamp: todayDateObj.getTime(),
+        });
+      }
+      
+      // Re-sort after adding/updating today's point to ensure correct order
+      result.sort((a, b) => {
+        const aTime = a.timestamp || (a.dateObj?.getTime?.() || 0);
+        const bTime = b.timestamp || (b.dateObj?.getTime?.() || 0);
+        return aTime - bTime;
+      });
+      
+      // Ensure the final point is always today's point with current value
+      // (in case sorting didn't place it last, force it to be last)
+      const finalIndex = result.length - 1;
+      if (finalIndex >= 0) {
+        const finalPointDate = result[finalIndex].dateObj;
+        if (finalPointDate instanceof Date) {
+          const finalMidnight = new Date(finalPointDate.getFullYear(), finalPointDate.getMonth(), finalPointDate.getDate());
+          if (finalMidnight.getTime() === todayMidnight.getTime()) {
+            // Final point is today, update it
+            result[finalIndex].value = currentTotalValue || 0;
+          } else {
+            // Final point is not today, ensure today is the final point
+            // Remove today if it's not last, then add it at the end
+            const todayIndex = result.findIndex((item, idx) => {
+              if (idx === finalIndex) return false; // Skip the last item
+              const itemDate = item.dateObj;
+              if (itemDate instanceof Date) {
+                const itemMidnight = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
+                return itemMidnight.getTime() === todayMidnight.getTime();
+              }
+              return false;
+            });
+            
+            if (todayIndex >= 0 && todayIndex !== finalIndex) {
+              // Remove today from its current position
+              const todayPoint = result.splice(todayIndex, 1)[0];
+              todayPoint.value = currentTotalValue || 0;
+              result.push(todayPoint);
+            } else if (todayIndex < 0) {
+              // Today point doesn't exist, add it
+              result.push({
+                date: formatDateForChart(todayDateObj, timePeriod),
+                value: currentTotalValue || 0,
+                fullDate: todayDateStr,
+                dateObj: todayDateObj,
+                timestamp: todayDateObj.getTime(),
+              });
+            }
+          }
+        }
+      }
     }
     
     return result;
@@ -1475,17 +1553,68 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               domain={[yAxisMin, yAxisMax]}
             />
             <Tooltip
-              contentStyle={{
-                backgroundColor: '#1e293b',
-                border: '1px solid #475569',
-                borderRadius: '8px',
-                color: '#ffffff',
+              content={(props) => {
+                if (!props.active || !props.payload || !props.payload.length) {
+                  return null;
+                }
+                
+                // For ALL view, find the nearest point based on X coordinate
+                if (timePeriod === 'ALL' && props.coordinate && chartData.length > 0) {
+                  // Get the X coordinate of the cursor relative to the chart
+                  const cursorX = props.coordinate.x;
+                  const chartWidth = props.viewBox?.width || 800;
+                  const marginLeft = 20; // Left margin from chart config
+                  const effectiveWidth = chartWidth - marginLeft * 2;
+                  const adjustedX = cursorX - marginLeft;
+                  
+                  // Calculate which data point index corresponds to the cursor position
+                  // Data points are evenly spaced across the chart width
+                  const pointSpacing = effectiveWidth / Math.max(1, chartData.length - 1);
+                  const nearestIndex = Math.round(adjustedX / pointSpacing);
+                  const clampedIndex = Math.max(0, Math.min(nearestIndex, chartData.length - 1));
+                  const nearestPoint = chartData[clampedIndex];
+                  
+                  if (nearestPoint) {
+                    return (
+                      <div 
+                        className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
+                        style={{
+                          backgroundColor: '#1e293b',
+                          border: '1px solid #475569',
+                          borderRadius: '8px',
+                        }}
+                      >
+                        <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
+                          {nearestPoint.date}
+                        </p>
+                        <p style={{ color: '#ffffff', fontWeight: 'bold' }}>
+                          ${nearestPoint.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    );
+                  }
+                }
+                
+                // Default tooltip for other views
+                const payload = props.payload[0];
+                return (
+                  <div 
+                    className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
+                    style={{
+                      backgroundColor: '#1e293b',
+                      border: '1px solid #475569',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
+                      {props.label || payload.name || ''}
+                    </p>
+                    <p style={{ color: '#ffffff', fontWeight: 'bold' }}>
+                      ${payload.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                );
               }}
-              labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
-              formatter={(value) => [
-                `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                'Value'
-              ]}
               filterNull={false}
               shared={false}
               animationDuration={0}
@@ -1533,8 +1662,16 @@ const StockGainsLeaderboard = ({ ticker, gains }) => {
   // Only show top 10 gainers
   const topGainers = gains.slice(0, 10);
 
+  // Calculate max height to show approximately 5 items (each item is ~68px with spacing)
+  const itemHeight = 68; // Approximate height per item including spacing
+  const visibleItems = 5;
+  const maxHeight = itemHeight * visibleItems;
+
   return (
-    <div className="space-y-2">
+    <div 
+      className={`space-y-2 ${topGainers.length > visibleItems ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800' : ''}`}
+      style={topGainers.length > visibleItems ? { maxHeight: `${maxHeight}px` } : {}}
+    >
       {topGainers.map((entry, index) => {
         const isPositive = entry.gain > 0;
         const isNegative = entry.gain < 0;
