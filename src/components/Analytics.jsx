@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, PieChart, Users, TrendingUp, Check } from 'lucide-react';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
+import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown } from 'lucide-react';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { readSheetData, initializeSheet } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
@@ -24,17 +24,73 @@ const Analytics = ({ refreshKey }) => {
   const [error, setError] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [historyData, setHistoryData] = useState([]);
+  const [holdingsHistory, setHoldingsHistory] = useState([]);
   const [timePeriod, setTimePeriod] = useState('ALL'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
 
   useEffect(() => {
     loadPortfolio();
     loadHistoryData();
+    loadHoldingsHistory();
   }, [refreshKey]);
+
+  // Load holdings history from HoldingsHistory sheet
+  const loadHoldingsHistory = async () => {
+    try {
+      const data = await readSheetData('HoldingsHistory!A1:D10000');
+      
+      if (!data || data.length === 0) {
+        setHoldingsHistory([]);
+        return;
+      }
+      
+      // Skip header row (row 0)
+      const rows = data.slice(1).filter(row => row && row.length >= 4 && row[0] && row[1] && row[2] && row[3]);
+      
+      const history = rows.map(row => {
+        const snapshotTime = row[0]?.trim() || '';
+        const username = row[1]?.trim() || '';
+        const ticker = row[2]?.trim().toUpperCase() || '';
+        const shares = parseFloat(row[3]) || 0;
+        
+        // Parse date
+        let date;
+        try {
+          if (snapshotTime.includes('T')) {
+            date = new Date(snapshotTime);
+          } else {
+            date = new Date(snapshotTime);
+          }
+          
+          if (isNaN(date.getTime())) {
+            return null;
+          }
+        } catch (e) {
+          return null;
+        }
+        
+        if (!username || !ticker || shares < 0) {
+          return null;
+        }
+        
+        return {
+          date,
+          username,
+          ticker,
+          shares,
+        };
+      }).filter(Boolean);
+      
+      setHoldingsHistory(history);
+    } catch (error) {
+      console.error('Error loading holdings history:', error);
+      setHoldingsHistory([]);
+    }
+  };
 
   // Load history data from History sheet
   const loadHistoryData = async () => {
     try {
-      const data = await readSheetData('History!A1:C10000');
+      const data = await readSheetData('History!A1:D10000');
       
       if (!data || data.length === 0) {
         setHistoryData([]);
@@ -48,20 +104,26 @@ const Analytics = ({ refreshKey }) => {
         const dateStr = row[0]?.trim() || '';
         const username = row[1]?.trim() || '';
         const totalValue = parseFloat(row[2]) || 0;
+        const captureType = row[3]?.trim()?.toUpperCase() || ''; // Column D: CaptureType
         
-        // Parse date (handle MM/DD/YYYY format from Google Sheets)
+        // Parse date (handle MM/DD/YYYY format and ISO timestamp format from Google Sheets)
         let date;
         try {
-          // First try MM/DD/YYYY format (common in Google Sheets)
-          const parts = dateStr.split('/');
-          if (parts.length === 3) {
-            const month = parseInt(parts[0]) - 1; // Month is 0-indexed
-            const day = parseInt(parts[1]);
-            const year = parseInt(parts[2]);
-            date = new Date(year, month, day);
-          } else {
-            // Fallback to standard Date parsing
+          // First try ISO timestamp format (YYYY-MM-DDTHH:MM:SS)
+          if (dateStr.includes('T')) {
             date = new Date(dateStr);
+          } else {
+            // Try MM/DD/YYYY format (common in Google Sheets)
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              const month = parseInt(parts[0]) - 1; // Month is 0-indexed
+              const day = parseInt(parts[1]);
+              const year = parseInt(parts[2]);
+              date = new Date(year, month, day);
+            } else {
+              // Fallback to standard Date parsing
+              date = new Date(dateStr);
+            }
           }
           
           // Validate date
@@ -74,10 +136,10 @@ const Analytics = ({ refreshKey }) => {
           return null;
         }
         
-        // Normalize date to midnight to group by day (ignore time)
+        // Store both the original date (with time) and normalized date (for grouping)
         const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
         
-        if (!username || isNaN(normalizedDate.getTime()) || totalValue <= 0) {
+        if (!username || isNaN(date.getTime()) || totalValue <= 0) {
           return null;
         }
         
@@ -85,10 +147,12 @@ const Analytics = ({ refreshKey }) => {
         const dateKey = `${normalizedDate.getFullYear()}-${String(normalizedDate.getMonth() + 1).padStart(2, '0')}-${String(normalizedDate.getDate()).padStart(2, '0')}`;
         
         return {
-          date: normalizedDate,
-          dateStr: dateKey,
+          date: date, // Original date with time information preserved
+          dateNormalized: normalizedDate, // Normalized to midnight for grouping
+          dateStr: dateKey, // YYYY-MM-DD format for grouping
           username,
           totalValue,
+          captureType,
         };
       }).filter(Boolean);
       
@@ -303,6 +367,88 @@ const Analytics = ({ refreshKey }) => {
         value: Number(value.toFixed(2)),
       }))
       .sort((a, b) => b.value - a.value);
+  };
+
+  // Calculate stock gains over the past 30 days for a specific ticker
+  const getStockGains = (ticker) => {
+    if (!ticker || holdingsHistory.length === 0 || selectedUsers.size === 0) {
+      return [];
+    }
+    
+    // Get current holdings for this ticker from portfolio (already filtered by selectedUsers)
+    const currentHoldings = new Map();
+    filteredPortfolio
+      .filter(item => item.ticker === ticker)
+      .forEach(item => {
+        const currentShares = currentHoldings.get(item.username) || 0;
+        currentHoldings.set(item.username, currentShares + item.shares);
+      });
+    
+    // Get oldest holdings from HoldingsHistory - only for selected users
+    const oldestHoldings = new Map();
+    holdingsHistory
+      .filter(item => item.ticker === ticker && selectedUsers.has(item.username))
+      .forEach(item => {
+        const existing = oldestHoldings.get(item.username);
+        // Keep the oldest entry for each user
+        if (!existing || item.date < existing.date) {
+          oldestHoldings.set(item.username, {
+            username: item.username,
+            shares: item.shares,
+            date: item.date,
+          });
+        }
+      });
+    
+    // Calculate gains for each user (only selected users)
+    const gains = [];
+    
+    // Calculate gains for users who have current holdings
+    currentHoldings.forEach((currentShares, username) => {
+      // Only process selected users
+      if (!selectedUsers.has(username)) {
+        return;
+      }
+      
+      const oldest = oldestHoldings.get(username);
+      const oldShares = oldest ? oldest.shares : 0;
+      const gain = currentShares - oldShares;
+      
+      // Only include users who have a non-zero change
+      if (gain !== 0) {
+        gains.push({
+          username,
+          gain,
+          currentShares,
+          oldShares,
+        });
+      }
+    });
+    
+    // Also include selected users who had holdings in the past but don't have any now (negative gain)
+    oldestHoldings.forEach((old, username) => {
+      // Only process selected users
+      if (!selectedUsers.has(username)) {
+        return;
+      }
+      
+      if (!currentHoldings.has(username)) {
+        const currentShares = 0;
+        const gain = currentShares - old.shares;
+        // Only include if gain is non-zero (negative gain means they sold all shares)
+        if (gain !== 0) {
+          gains.push({
+            username,
+            gain,
+            currentShares,
+            oldShares: old.shares,
+          });
+        }
+      }
+    });
+    
+    // Sort by gain (descending) - highest gains first
+    return gains.sort((a, b) => b.gain - a.gain);
   };
 
   const CustomTooltip = ({ active, payload }) => {
@@ -553,6 +699,7 @@ const Analytics = ({ refreshKey }) => {
             historyData={historyData}
             selectedUsers={selectedUsers}
             timePeriod={timePeriod}
+            currentTotalValue={totalValue}
           />
         </motion.div>
       )}
@@ -941,31 +1088,11 @@ const Analytics = ({ refreshKey }) => {
                         </div>
                       </div>
                       <div>
-                        <h5 className="text-lg font-semibold text-white mb-4">
-                          Value by User
+                        <h5 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                          <Trophy className="w-5 h-5 text-yellow-500" />
+                          Top Gainers (Past 30 Days)
                         </h5>
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={distribution}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                              <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-                              <YAxis stroke="#94a3b8" fontSize={12} />
-                              <Tooltip 
-                                contentStyle={{ 
-                                  backgroundColor: '#1e293b', 
-                                  border: '1px solid #475569',
-                                  borderRadius: '8px'
-                                }}
-                                formatter={(value) => [`$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Value']}
-                              />
-                              <Bar dataKey="value" fill="#0ea5e9" radius={[8, 8, 0, 0]}>
-                                {distribution.map((entry, index) => (
-                                  <Cell key={`bar-cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
+                        <StockGainsLeaderboard ticker={stock.ticker} gains={getStockGains(stock.ticker)} />
                       </div>
                     </div>
                   )}
@@ -992,88 +1119,288 @@ const Analytics = ({ refreshKey }) => {
 };
 
 // Portfolio Value Over Time Chart Component
-const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
+const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTotalValue }) => {
   // Filter and process history data
   const chartData = useMemo(() => {
-    if (!historyData || historyData.length === 0) {
-      return [];
-    }
-    
-    // Filter by selected users
-    const filtered = historyData.filter(item => selectedUsers.has(item.username));
-    
-    if (filtered.length === 0) {
-      return [];
-    }
-    
-    // Calculate date range based on time period
     const now = new Date();
-    let startDate = new Date();
+    const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayDateObj = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
-    switch (timePeriod) {
-      case '1D':
-        startDate.setDate(now.getDate() - 1);
-        break;
-      case '1W':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case '1M':
-        startDate.setMonth(now.getMonth() - 1);
-        break;
-      case '3M':
-        startDate.setMonth(now.getMonth() - 3);
-        break;
-      case 'YTD':
-        startDate = new Date(now.getFullYear(), 0, 1);
-        break;
-      case '1Y':
-        startDate.setFullYear(now.getFullYear() - 1);
-        break;
-      case 'ALL':
-        startDate = new Date(0); // Beginning of time
-        break;
-      default:
-        startDate = new Date(0);
+    // Initialize with empty array - will always have at least today's point
+    let result = [];
+    
+    if (historyData && historyData.length > 0) {
+      // Filter by selected users
+      let filtered = historyData.filter(item => selectedUsers.has(item.username));
+      
+      if (filtered.length > 0) {
+        // Determine allowed CaptureTypes based on time period
+        let allowedCaptureTypes = [];
+        switch (timePeriod) {
+          case '1D':
+            // Daily chart: Use Hourly, Daily, and Weekly
+            allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
+            break;
+          case '1W':
+            // 1 week chart: Use Hourly, Daily, and Weekly
+            allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
+            break;
+          case '1M':
+          case '3M':
+            // 1M and 3M charts: Use Daily and Weekly
+            allowedCaptureTypes = ['DAILY', 'WEEKLY'];
+            break;
+          case 'YTD':
+          case '1Y':
+          case 'ALL':
+            // YTD, 1 year, and all time: Use Weekly
+            allowedCaptureTypes = ['WEEKLY'];
+            break;
+          default:
+            allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
+        }
+        
+        // Filter by CaptureType
+        filtered = filtered.filter(item => {
+          const captureType = item.captureType?.toUpperCase() || '';
+          return allowedCaptureTypes.includes(captureType);
+        });
+        
+        // Calculate date range based on time period
+        let startDate = new Date();
+        
+        switch (timePeriod) {
+          case '1D':
+            startDate.setDate(now.getDate() - 1);
+            break;
+          case '1W':
+            startDate.setDate(now.getDate() - 7);
+            break;
+          case '1M':
+            startDate.setMonth(now.getMonth() - 1);
+            break;
+          case '3M':
+            startDate.setMonth(now.getMonth() - 3);
+            break;
+          case 'YTD':
+            startDate = new Date(now.getFullYear(), 0, 1);
+            break;
+          case '1Y':
+            startDate.setFullYear(now.getFullYear() - 1);
+            break;
+          case 'ALL':
+            startDate = new Date(0); // Beginning of time
+            break;
+          default:
+            startDate = new Date(0);
+        }
+        
+        // Filter by date range
+        // For 1D, include today's hourly data; for other views, exclude today (we add current value separately)
+        const dateFiltered = filtered.filter(item => {
+          const itemDate = item.dateNormalized || item.date; // Use normalized date for comparison
+          if (timePeriod === '1D') {
+            // For 1D, include all data from the last 24 hours including today
+            return itemDate >= startDate;
+          } else {
+            // For other views, exclude today's historical data since we'll use currentTotalValue
+            return itemDate >= startDate && item.dateStr !== todayDateStr;
+          }
+        });
+        
+        // For 1D view, we want hourly granularity - preserve each distinct timestamp
+        // For other views, we group by date and use the last value per day
+        let dateMap = new Map();
+        
+        if (timePeriod === '1D') {
+          // For daily view: Group by full timestamp (including time) for hourly granularity
+          // Use the LAST value per user per hour to avoid double-counting
+          const hourUserMap = new Map(); // Maps hourTimestamp -> Map of username -> last entry
+          
+          dateFiltered.forEach(item => {
+            // Round to nearest hour to group entries within the same hour
+            const date = item.date;
+            const hourTimestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), 0, 0, 0).getTime();
+            
+            if (!hourUserMap.has(hourTimestamp)) {
+              hourUserMap.set(hourTimestamp, new Map());
+            }
+            
+            const userMap = hourUserMap.get(hourTimestamp);
+            const existingEntry = userMap.get(item.username);
+            
+            // Keep the most recent entry for each user at this hour
+            if (!existingEntry || date > existingEntry.date) {
+              userMap.set(item.username, {
+                date: date,
+                totalValue: item.totalValue,
+                username: item.username,
+              });
+            }
+          });
+          
+          // Convert to array format, summing last values per user for each hour
+          result = Array.from(hourUserMap.entries())
+            .map(([hourTimestamp, userMap]) => {
+              // Sum the last value for each user at this hour
+              const totalValue = Array.from(userMap.values()).reduce(
+                (sum, entry) => sum + entry.totalValue,
+                0
+              );
+              
+              const dateObj = new Date(hourTimestamp);
+              
+              return {
+                date: formatDateForChart(dateObj, timePeriod),
+                value: totalValue,
+                fullDate: `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`,
+                dateObj: dateObj,
+              };
+            })
+            .sort((a, b) => a.dateObj - b.dateObj);
+          
+          // Always add today's current value as the final point
+          const now = new Date();
+          const lastHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+          const lastPointTime = result.length > 0 ? result[result.length - 1].dateObj : null;
+          
+          // Check if we need to update or add the current value point
+          if (lastPointTime && lastPointTime.getTime() === lastHour.getTime()) {
+            // Update the last point with current value
+            result[result.length - 1].value = currentTotalValue || 0;
+          } else {
+            // Add current value as new point
+            result.push({
+              date: formatDateForChart(lastHour, timePeriod),
+              value: currentTotalValue || 0,
+              fullDate: todayDateStr,
+              dateObj: lastHour,
+            });
+          }
+        } else if (timePeriod === '1W') {
+          // For weekly view: Preserve granularity (Hourly, Daily, Weekly) 
+          // Use the LAST value per user per time period to avoid double-counting
+          const periodUserMap = new Map(); // Maps periodKey -> Map of username -> last entry
+          
+          dateFiltered.forEach(item => {
+            const date = item.date;
+            const captureType = item.captureType?.toUpperCase() || '';
+            
+            // For hourly data, use hour-level grouping
+            // For daily/weekly data, use day-level grouping
+            let periodKey;
+            let dateObj;
+            
+            if (captureType === 'HOURLY') {
+              // Group by hour for hourly data
+              const hourTimestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), 0, 0, 0);
+              periodKey = hourTimestamp.getTime();
+              dateObj = hourTimestamp;
+            } else {
+              // Group by day for daily/weekly data
+              const dayTimestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+              periodKey = dayTimestamp.getTime();
+              dateObj = dayTimestamp;
+            }
+            
+            if (!periodUserMap.has(periodKey)) {
+              periodUserMap.set(periodKey, {
+                dateObj: dateObj,
+                dateKey: item.dateStr,
+                captureType: captureType, // Store capture type for later use
+                userMap: new Map(),
+              });
+            }
+            
+            const periodEntry = periodUserMap.get(periodKey);
+            const existingEntry = periodEntry.userMap.get(item.username);
+            
+            // Keep the most recent entry for each user at this time period
+            // This prevents double-counting when multiple capture types exist for the same day
+            if (!existingEntry || date > existingEntry.date) {
+              periodEntry.userMap.set(item.username, {
+                date: date,
+                totalValue: item.totalValue,
+                username: item.username,
+              });
+            }
+          });
+          
+          // Convert to array, summing last values per user for each time period
+          result = Array.from(periodUserMap.values())
+            .map(periodEntry => {
+              // Sum the last value for each user at this time period
+              const totalValue = Array.from(periodEntry.userMap.values()).reduce(
+                (sum, entry) => sum + entry.totalValue,
+                0
+              );
+              
+              // For hourly points in weekly view, ensure unique X position by using the exact timestamp
+              // This helps with tooltip snapping accuracy
+              const dateObjForPosition = periodEntry.dateObj;
+              
+              // Check if this is an hourly data point (has hour/minute component or is marked as HOURLY)
+              const captureType = periodEntry.captureType || '';
+              const isHourlyPoint = captureType === 'HOURLY' || 
+                (periodEntry.dateObj.getHours() !== 0 || periodEntry.dateObj.getMinutes() !== 0);
+              
+              return {
+                date: formatDateForChart(periodEntry.dateObj, timePeriod, isHourlyPoint),
+                value: totalValue,
+                fullDate: periodEntry.dateKey,
+                dateObj: dateObjForPosition,
+                // Store the original timestamp for better positioning
+                timestamp: dateObjForPosition.getTime(),
+                isHourly: isHourlyPoint,
+              };
+            })
+            .sort((a, b) => a.dateObj - b.dateObj);
+        } else {
+          // For 1M, 3M, YTD, 1Y, ALL: Group by date and sum total values (existing logic)
+          dateFiltered.forEach(item => {
+            const dateKey = item.dateStr;
+            const normalizedDate = item.dateNormalized || item.date;
+            
+            if (!dateMap.has(dateKey)) {
+              dateMap.set(dateKey, {
+                date: dateKey,
+                dateObj: normalizedDate,
+                totalValue: 0,
+                userCount: 0,
+              });
+            }
+            
+            // Sum up the total values for all selected users on this date
+            const dateEntry = dateMap.get(dateKey);
+            dateEntry.totalValue += item.totalValue;
+            dateEntry.userCount += 1;
+          });
+          
+          // Convert to array, sort by date, and format for chart
+          result = Array.from(dateMap.values())
+            .sort((a, b) => a.dateObj - b.dateObj)
+            .map(item => ({
+              date: formatDateForChart(item.dateObj, timePeriod),
+              value: item.totalValue,
+              fullDate: item.date,
+              dateObj: item.dateObj,
+            }));
+        }
+      }
     }
     
-    // Filter by date range
-    const dateFiltered = filtered.filter(item => item.date >= startDate);
-    
-    // Group by date (dateStr) and sum total values for all selected users on that date
-    // Each date should have one data point representing the combined value of all selected users
-    const dateMap = new Map();
-    
-    dateFiltered.forEach(item => {
-      // Use dateStr as the key to group entries from the same date
-      const dateKey = item.dateStr;
-      
-      if (!dateMap.has(dateKey)) {
-        dateMap.set(dateKey, {
-          date: dateKey,
-          dateObj: new Date(item.date), // Store date object for sorting
-          totalValue: 0,
-          userCount: 0, // Track how many users contributed to this date
-        });
-      }
-      
-      // Sum up the total values for all selected users on this date
-      const dateEntry = dateMap.get(dateKey);
-      dateEntry.totalValue += item.totalValue;
-      dateEntry.userCount += 1;
-    });
-    
-    // Convert to array, sort by date, and format for chart
-    const result = Array.from(dateMap.values())
-      .sort((a, b) => a.dateObj - b.dateObj) // Sort chronologically
-      .map(item => ({
-        date: formatDateForChart(item.date, timePeriod),
-        value: item.totalValue, // Total value of all selected users on this date
-        fullDate: item.date,
-        dateObj: item.dateObj,
-      }));
+    // Always add today's point with the current Total Portfolio Value (except for 1D which already has it)
+    if (timePeriod !== '1D') {
+      result.push({
+        date: formatDateForChart(todayDateObj, timePeriod),
+        value: currentTotalValue || 0,
+        fullDate: todayDateStr,
+        dateObj: todayDateObj,
+      });
+    }
     
     return result;
-  }, [historyData, selectedUsers, timePeriod]);
+  }, [historyData, selectedUsers, timePeriod, currentTotalValue]);
   
   if (chartData.length === 0) {
     return (
@@ -1083,10 +1410,12 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
     );
   }
   
-  // Calculate change percentage
-  const firstValue = chartData[0]?.value || 0;
-  const lastValue = chartData[chartData.length - 1]?.value || 0;
-  const change = lastValue - firstValue;
+  // Current value is always the current Total Portfolio Value
+  const currentValue = currentTotalValue || 0;
+  
+  // Calculate change percentage (from first historical point to current value)
+  const firstValue = chartData.length > 0 ? chartData[0]?.value || 0 : currentValue;
+  const change = currentValue - firstValue;
   const changePercent = firstValue > 0 ? ((change / firstValue) * 100) : 0;
   
   // Calculate min and max values for Y-axis scaling
@@ -1107,7 +1436,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
         <div>
           <p className="text-sm text-slate-400 mb-1">Current Value</p>
           <p className="text-3xl font-bold text-white">
-            ${lastValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${currentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
         </div>
         <div>
@@ -1126,7 +1455,11 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
       {/* Line Chart */}
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+          <LineChart 
+            data={chartData} 
+            margin={{ top: 5, right: 20, bottom: 5, left: 20 }}
+            syncId="portfolioChart"
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
             <XAxis 
               dataKey="date" 
@@ -1153,14 +1486,32 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
                 `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                 'Value'
               ]}
+              filterNull={false}
+              shared={false}
+              animationDuration={0}
+              allowEscapeViewBox={{ x: false, y: false }}
+              cursor={{ stroke: '#0ea5e9', strokeWidth: 1, strokeDasharray: '3 3' }}
             />
             <Line
               type="monotone"
               dataKey="value"
               stroke="#0ea5e9"
               strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 6, fill: '#0ea5e9' }}
+              dot={{ 
+                r: timePeriod === '1W' ? 4 : 5, 
+                fill: '#0ea5e9', 
+                strokeWidth: 2, 
+                stroke: '#ffffff'
+              }}
+              activeDot={{ 
+                r: timePeriod === '1W' ? 8 : 9, 
+                fill: '#0ea5e9', 
+                stroke: '#ffffff', 
+                strokeWidth: 2,
+                style: { cursor: 'pointer' }
+              }}
+              connectNulls={false}
+              isAnimationActive={false}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -1169,15 +1520,123 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
   );
 };
 
+// Stock Gains Leaderboard Component
+const StockGainsLeaderboard = ({ ticker, gains }) => {
+  if (!gains || gains.length === 0) {
+    return (
+      <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+        <p className="text-sm text-slate-400 text-center">No historical data available for this stock</p>
+      </div>
+    );
+  }
+
+  // Only show top 10 gainers
+  const topGainers = gains.slice(0, 10);
+
+  return (
+    <div className="space-y-2">
+      {topGainers.map((entry, index) => {
+        const isPositive = entry.gain > 0;
+        const isNegative = entry.gain < 0;
+        
+        return (
+          <motion.div
+            key={`${entry.username}-${ticker}`}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className={`p-3 rounded-lg border ${
+              index === 0 && isPositive
+                ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 border-yellow-500/50'
+                : isPositive
+                ? 'bg-slate-800/50 border-green-500/30'
+                : isNegative
+                ? 'bg-slate-800/50 border-red-500/30'
+                : 'bg-slate-800/50 border-slate-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                  index === 0 && isPositive
+                    ? 'bg-yellow-500/30 text-yellow-400'
+                    : index === 1 && isPositive
+                    ? 'bg-slate-600 text-slate-300'
+                    : index === 2 && isPositive
+                    ? 'bg-amber-600/30 text-amber-400'
+                    : 'bg-slate-700 text-slate-400'
+                }`}>
+                  {index + 1}
+                </div>
+                <div>
+                  <p className="font-semibold text-white">{entry.username}</p>
+                  <p className="text-xs text-slate-400">
+                    {entry.oldShares.toFixed(2)} → {entry.currentShares.toFixed(2)} shares
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className={`flex items-center gap-1 font-bold ${
+                  isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-400'
+                }`}>
+                  {isPositive ? (
+                    <TrendingUp className="w-4 h-4" />
+                  ) : isNegative ? (
+                    <TrendingDown className="w-4 h-4" />
+                  ) : null}
+                  <span>
+                    {entry.gain > 0 ? '+' : ''}{entry.gain.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">shares</p>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+};
+
 // Helper function to format dates for chart display
-const formatDateForChart = (dateStr, period) => {
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return dateStr;
+const formatDateForChart = (dateInput, period, includeTime = false) => {
+  let date;
+  
+  // Handle both date strings and Date objects
+  if (dateInput instanceof Date) {
+    date = dateInput;
+  } else if (typeof dateInput === 'string') {
+    // If it's a date string in YYYY-MM-DD format, parse it as local date to avoid timezone issues
+    const dateMatch = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateMatch) {
+      // Parse as local date (not UTC) to avoid day shift
+      const year = parseInt(dateMatch[1]);
+      const month = parseInt(dateMatch[2]) - 1; // Month is 0-indexed
+      const day = parseInt(dateMatch[3]);
+      date = new Date(year, month, day);
+    } else if (dateInput.includes('T')) {
+      // ISO timestamp string - parse normally
+      date = new Date(dateInput);
+    } else {
+      // Fallback to standard parsing
+      date = new Date(dateInput);
+    }
+  } else {
+    return String(dateInput);
+  }
+  
+  if (isNaN(date.getTime())) return String(dateInput);
   
   switch (period) {
     case '1D':
+      // For daily view, show hour and minute
       return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     case '1W':
+      // For weekly view with hourly data, include time to ensure unique X positions
+      if (includeTime || date.getHours() !== 0 || date.getMinutes() !== 0) {
+        // Include time for hourly points to ensure unique positioning
+        return `${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+      }
       return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     case '1M':
     case '3M':
