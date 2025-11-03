@@ -227,7 +227,8 @@ function App() {
                               <AddStockForm 
                                 stockData={selectedStock} 
                                 selectedUser={selectedUser}
-                                onSuccess={handleStockAdded} 
+                                onSuccess={handleStockAdded}
+                                refreshKey={portfolioKey}
                               />
                             </>
                           ) : (

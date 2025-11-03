@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, PieChart, Users, TrendingUp, Check } from 'lucide-react';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
 import { readSheetData, initializeSheet } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
@@ -23,10 +23,81 @@ const Analytics = ({ refreshKey }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState(new Set());
+  const [historyData, setHistoryData] = useState([]);
+  const [timePeriod, setTimePeriod] = useState('ALL'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
 
   useEffect(() => {
     loadPortfolio();
+    loadHistoryData();
   }, [refreshKey]);
+
+  // Load history data from History sheet
+  const loadHistoryData = async () => {
+    try {
+      const data = await readSheetData('History!A1:C10000');
+      
+      if (!data || data.length === 0) {
+        setHistoryData([]);
+        return;
+      }
+      
+      // Skip header row (row 0)
+      const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1] && row[2]);
+      
+      const history = rows.map(row => {
+        const dateStr = row[0]?.trim() || '';
+        const username = row[1]?.trim() || '';
+        const totalValue = parseFloat(row[2]) || 0;
+        
+        // Parse date (handle MM/DD/YYYY format from Google Sheets)
+        let date;
+        try {
+          // First try MM/DD/YYYY format (common in Google Sheets)
+          const parts = dateStr.split('/');
+          if (parts.length === 3) {
+            const month = parseInt(parts[0]) - 1; // Month is 0-indexed
+            const day = parseInt(parts[1]);
+            const year = parseInt(parts[2]);
+            date = new Date(year, month, day);
+          } else {
+            // Fallback to standard Date parsing
+            date = new Date(dateStr);
+          }
+          
+          // Validate date
+          if (isNaN(date.getTime())) {
+            console.error('Invalid date format:', dateStr);
+            return null;
+          }
+        } catch (e) {
+          console.error('Error parsing date:', dateStr, e);
+          return null;
+        }
+        
+        // Normalize date to midnight to group by day (ignore time)
+        const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        
+        if (!username || isNaN(normalizedDate.getTime()) || totalValue <= 0) {
+          return null;
+        }
+        
+        // Create date string in YYYY-MM-DD format for grouping
+        const dateKey = `${normalizedDate.getFullYear()}-${String(normalizedDate.getMonth() + 1).padStart(2, '0')}-${String(normalizedDate.getDate()).padStart(2, '0')}`;
+        
+        return {
+          date: normalizedDate,
+          dateStr: dateKey,
+          username,
+          totalValue,
+        };
+      }).filter(Boolean);
+      
+      setHistoryData(history);
+    } catch (error) {
+      console.error('Error loading history data:', error);
+      setHistoryData([]);
+    }
+  };
 
   const loadPortfolio = async () => {
     setIsLoading(true);
@@ -370,7 +441,7 @@ const Analytics = ({ refreshKey }) => {
                 selectedUsers.has(username)
                   ? 'bg-primary-500/20 border-primary-500/50'
                   : 'bg-slate-700/30 border-slate-600/50 hover:bg-slate-700/50'
-              }`}
+              }`} 
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
@@ -445,6 +516,46 @@ const Analytics = ({ refreshKey }) => {
           </motion.div>
         )}
       </div>
+
+      {/* Portfolio Value Over Time Chart */}
+      {selectedUsers.size > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.27 }}
+          className="card p-6"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary-500" />
+              <h3 className="text-xl font-bold text-white">Portfolio Value Over Time</h3>
+            </div>
+            
+            {/* Time Period Toggles */}
+            <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
+              {['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map((period) => (
+                <button
+                  key={period}
+                  onClick={() => setTimePeriod(period)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    timePeriod === period
+                      ? 'bg-primary-500 text-white'
+                      : 'text-slate-400 hover:text-slate-300'
+                  }`}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <PortfolioValueChart 
+            historyData={historyData}
+            selectedUsers={selectedUsers}
+            timePeriod={timePeriod}
+          />
+        </motion.div>
+      )}
 
       {/* Total Value Distribution Pie Charts */}
       {totalValueByUser.length > 0 && (
@@ -878,6 +989,207 @@ const Analytics = ({ refreshKey }) => {
       )}
     </div>
   );
+};
+
+// Portfolio Value Over Time Chart Component
+const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod }) => {
+  // Filter and process history data
+  const chartData = useMemo(() => {
+    if (!historyData || historyData.length === 0) {
+      return [];
+    }
+    
+    // Filter by selected users
+    const filtered = historyData.filter(item => selectedUsers.has(item.username));
+    
+    if (filtered.length === 0) {
+      return [];
+    }
+    
+    // Calculate date range based on time period
+    const now = new Date();
+    let startDate = new Date();
+    
+    switch (timePeriod) {
+      case '1D':
+        startDate.setDate(now.getDate() - 1);
+        break;
+      case '1W':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case '1M':
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      case '3M':
+        startDate.setMonth(now.getMonth() - 3);
+        break;
+      case 'YTD':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      case '1Y':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      case 'ALL':
+        startDate = new Date(0); // Beginning of time
+        break;
+      default:
+        startDate = new Date(0);
+    }
+    
+    // Filter by date range
+    const dateFiltered = filtered.filter(item => item.date >= startDate);
+    
+    // Group by date (dateStr) and sum total values for all selected users on that date
+    // Each date should have one data point representing the combined value of all selected users
+    const dateMap = new Map();
+    
+    dateFiltered.forEach(item => {
+      // Use dateStr as the key to group entries from the same date
+      const dateKey = item.dateStr;
+      
+      if (!dateMap.has(dateKey)) {
+        dateMap.set(dateKey, {
+          date: dateKey,
+          dateObj: new Date(item.date), // Store date object for sorting
+          totalValue: 0,
+          userCount: 0, // Track how many users contributed to this date
+        });
+      }
+      
+      // Sum up the total values for all selected users on this date
+      const dateEntry = dateMap.get(dateKey);
+      dateEntry.totalValue += item.totalValue;
+      dateEntry.userCount += 1;
+    });
+    
+    // Convert to array, sort by date, and format for chart
+    const result = Array.from(dateMap.values())
+      .sort((a, b) => a.dateObj - b.dateObj) // Sort chronologically
+      .map(item => ({
+        date: formatDateForChart(item.date, timePeriod),
+        value: item.totalValue, // Total value of all selected users on this date
+        fullDate: item.date,
+        dateObj: item.dateObj,
+      }));
+    
+    return result;
+  }, [historyData, selectedUsers, timePeriod]);
+  
+  if (chartData.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-slate-400">
+        <p>No historical data available for the selected time period</p>
+      </div>
+    );
+  }
+  
+  // Calculate change percentage
+  const firstValue = chartData[0]?.value || 0;
+  const lastValue = chartData[chartData.length - 1]?.value || 0;
+  const change = lastValue - firstValue;
+  const changePercent = firstValue > 0 ? ((change / firstValue) * 100) : 0;
+  
+  // Calculate min and max values for Y-axis scaling
+  const values = chartData.map(d => d.value);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const range = maxValue - minValue;
+  
+  // Add 10% padding above and below the data range for better visualization
+  const padding = range * 0.1 || (maxValue * 0.05) || 1000; // At least 5% padding or $1000
+  const yAxisMin = Math.max(0, minValue - padding); // Don't go below 0
+  const yAxisMax = maxValue + padding;
+  
+  return (
+    <div className="space-y-4">
+      {/* Summary Stats */}
+      <div className="flex items-end gap-6">
+        <div>
+          <p className="text-sm text-slate-400 mb-1">Current Value</p>
+          <p className="text-3xl font-bold text-white">
+            ${lastValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </div>
+        <div>
+          <p className="text-sm text-slate-400 mb-1">
+            {timePeriod === 'ALL' ? 'Total Change' : 'Period Change'}
+          </p>
+          <p className={`text-2xl font-bold ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {change >= 0 ? '+' : ''}${change.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className={`text-sm ${changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
+          </p>
+        </div>
+      </div>
+      
+      {/* Line Chart */}
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+            <XAxis 
+              dataKey="date" 
+              stroke="#94a3b8"
+              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              axisLine={{ stroke: '#475569' }}
+            />
+            <YAxis 
+              stroke="#94a3b8"
+              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              axisLine={{ stroke: '#475569' }}
+              tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+              domain={[yAxisMin, yAxisMax]}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1e293b',
+                border: '1px solid #475569',
+                borderRadius: '8px',
+                color: '#ffffff',
+              }}
+              labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
+              formatter={(value) => [
+                `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                'Value'
+              ]}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#0ea5e9"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 6, fill: '#0ea5e9' }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
+// Helper function to format dates for chart display
+const formatDateForChart = (dateStr, period) => {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return dateStr;
+  
+  switch (period) {
+    case '1D':
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    case '1W':
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    case '1M':
+    case '3M':
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    case 'YTD':
+    case '1Y':
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    case 'ALL':
+      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    default:
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
 };
 
 export default Analytics;

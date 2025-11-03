@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Loader, CheckCircle2 } from 'lucide-react';
-import { appendRow } from '../utils/googleSheets';
+import { Plus, Loader, CheckCircle2, AlertCircle } from 'lucide-react';
+import { appendRow, readSheetData, initializeSheet } from '../utils/googleSheets';
 
-const AddStockForm = ({ stockData, selectedUser, onSuccess }) => {
+const AddStockForm = ({ stockData, selectedUser, onSuccess, refreshKey }) => {
   const [shares, setShares] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [hasExistingStock, setHasExistingStock] = useState(false);
+  const [existingShares, setExistingShares] = useState(0);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -53,6 +55,57 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess }) => {
       setIsSubmitting(false);
     }
   };
+
+  // Check for existing stock holdings when stockData or selectedUser changes
+  useEffect(() => {
+    const checkExistingStock = async () => {
+      if (!selectedUser || !stockData || !stockData.symbol) {
+        setHasExistingStock(false);
+        setExistingShares(0);
+        return;
+      }
+      
+      try {
+        await initializeSheet();
+        const data = await readSheetData();
+        const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
+        
+        // Find stock holdings for this user matching the selected stock
+        // Use visualSymbol from stockData or symbol
+        const stockSymbol = stockData.visualSymbol || stockData.symbol;
+        const stockRows = rows.filter(row => {
+          const ticker = row[1]?.trim().toUpperCase();
+          const username = row[0]?.trim();
+          return ticker === stockSymbol.toUpperCase() && 
+                 username.toLowerCase() === selectedUser.trim().toLowerCase();
+        });
+        
+        if (stockRows.length > 0) {
+          const totalShares = stockRows.reduce((sum, row) => {
+            const shares = parseFloat(row[2]) || 0;
+            return sum + shares;
+          }, 0);
+          
+          if (totalShares > 0) {
+            setHasExistingStock(true);
+            setExistingShares(totalShares);
+          } else {
+            setHasExistingStock(false);
+            setExistingShares(0);
+          }
+        } else {
+          setHasExistingStock(false);
+          setExistingShares(0);
+        }
+      } catch (error) {
+        console.error('Error checking existing stock:', error);
+        setHasExistingStock(false);
+        setExistingShares(0);
+      }
+    };
+    
+    checkExistingStock();
+  }, [selectedUser, stockData, refreshKey]);
 
   // Clear success message after 2 seconds and call onSuccess
   useEffect(() => {
@@ -104,6 +157,23 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess }) => {
           className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm mb-4"
         >
           Please select a user from the "Select User" tab first.
+        </motion.div>
+      )}
+
+      {hasExistingStock && stockData && selectedUser && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm mb-4 flex items-start gap-2"
+        >
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold mb-1">Stock holdings already exist</p>
+            <p className="text-xs">
+              This account already has {existingShares.toFixed(2)} shares of {stockData.symbol || stockData.visualSymbol}.
+              Please edit the existing stock record in the holdings section above, or delete it first to add a new amount.
+            </p>
+          </div>
         </motion.div>
       )}
 
@@ -182,10 +252,10 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess }) => {
 
         <motion.button
           type="submit"
-          disabled={isSubmitting}
-          className="btn-primary w-full flex items-center justify-center gap-2"
-          whileHover={{ scale: isSubmitting ? 1 : 1.02 }}
-          whileTap={{ scale: isSubmitting ? 1 : 0.98 }}
+          disabled={isSubmitting || !selectedUser || !stockData || hasExistingStock}
+          className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          whileHover={{ scale: isSubmitting || hasExistingStock ? 1 : 1.02 }}
+          whileTap={{ scale: isSubmitting || hasExistingStock ? 1 : 0.98 }}
         >
           {isSubmitting ? (
             <>
@@ -195,7 +265,7 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess }) => {
           ) : (
             <>
               <Plus className="w-4 h-4" />
-              Add to Portfolio
+              {hasExistingStock ? 'Stock Already Exists' : 'Add to Portfolio'}
             </>
           )}
         </motion.button>
