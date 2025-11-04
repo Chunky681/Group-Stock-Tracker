@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell } from 'lucide-react';
+import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell, Coins, Building2, ArrowUp } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
@@ -18,6 +18,155 @@ const COLORS = [
   '#06b6d4', // cyan
 ];
 
+// Cash Particles Animation Component
+const CashParticlesAnimation = ({ trigger, distribution }) => {
+  const particles = Array.from({ length: 15 }, (_, i) => i);
+  
+  // Calculate origin point based on first place holder's position in pie chart
+  // Pie chart starts at 90 degrees (top) and goes counterclockwise
+  // First slice is at the top, so we'll position particles near the top-center
+  const originX = 50; // Center horizontally
+  const originY = 25; // Top portion of pie chart (where first slice is)
+  
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <AnimatePresence>
+        {trigger && particles.map((i) => {
+          // Spread particles in a burst pattern from the origin
+          const angle = (i / particles.length) * 360;
+          const distance = 60 + Math.random() * 80;
+          const x = Math.cos((angle * Math.PI) / 180) * distance;
+          const y = Math.sin((angle * Math.PI) / 180) * distance;
+          
+          return (
+            <motion.div
+              key={`cash-${i}-${trigger}`}
+              initial={{ 
+                opacity: 1, 
+                scale: 1,
+                x: 0,
+                y: 0,
+              }}
+              animate={{
+                opacity: [1, 1, 0],
+                scale: [1, 0.5, 0],
+                x: x,
+                y: y + 180, // Particles fall downward
+              }}
+              exit={{ opacity: 0 }}
+              transition={{
+                duration: 2.5,
+                delay: i * 0.05,
+                ease: "easeOut"
+              }}
+              className="absolute"
+              style={{
+                left: `${originX}%`,
+                top: `${originY}%`,
+              }}
+            >
+              <DollarSign className="w-4 h-4 text-green-400" />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// Property Value Appreciation Animation Component
+const RealEstateAnimation = ({ trigger }) => {
+  const houses = Array.from({ length: 12 }, (_, i) => i);
+  
+  return (
+    <AnimatePresence>
+      {trigger && houses.map((i) => {
+        // Pre-calculate random values for deterministic animation
+        const randomSeed = i * 0.618; // Golden ratio for better distribution
+        const xOffset = (Math.sin(randomSeed * Math.PI * 2) * 180); // Spread across width
+        const delay = i * 0.08; // Stagger the animation
+        const duration = 2.2 + (Math.sin(randomSeed) * 0.8); // Variable duration
+        const rotation1 = Math.sin(randomSeed * 10) * 15;
+        const rotation2 = Math.cos(randomSeed * 15) * 20;
+        const rotation3 = Math.sin(randomSeed * 20) * 25;
+        
+        return (
+          <motion.div
+            key={`house-${i}-${trigger}`}
+            initial={{ 
+              opacity: 0,
+              y: 100,
+              scale: 0.5,
+              rotate: 0,
+            }}
+            animate={{
+              opacity: [0, 1, 1, 0],
+              y: [100, -30, -30, -80],
+              scale: [0.5, 1.2, 1, 0.8],
+              rotate: [0, rotation1, rotation2, rotation3],
+            }}
+            exit={{ opacity: 0 }}
+            transition={{
+              duration: duration,
+              delay: delay,
+              ease: "easeOut"
+            }}
+            className="absolute pointer-events-none"
+            style={{
+              left: `calc(50% + ${xOffset}px)`,
+              bottom: '20%',
+            }}
+          >
+            <Home className="w-6 h-6 text-red-400 drop-shadow-lg" />
+          </motion.div>
+        );
+      })}
+    </AnimatePresence>
+  );
+};
+
+// Chart Arrow Animation Component
+const ChartArrowAnimation = ({ trigger }) => {
+  const arrows = Array.from({ length: 5 }, (_, i) => i);
+  
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <AnimatePresence>
+        {trigger && arrows.map((i) => {
+          const x = 20 + (i * 15);
+          const y = 80 - (i * 10);
+          
+          return (
+            <motion.div
+              key={`arrow-${i}-${trigger}`}
+              initial={{ 
+                opacity: 0,
+                y: 100,
+                x: x,
+              }}
+              animate={{
+                opacity: [0, 1, 1, 0],
+                y: [100, y, y, 50],
+                scale: [0.8, 1, 1, 0.8],
+              }}
+              exit={{ opacity: 0 }}
+              transition={{
+                duration: 1.5,
+                delay: i * 0.15,
+                ease: "easeOut"
+              }}
+              className="absolute"
+              style={{ left: `${x}%` }}
+            >
+              <ArrowUp className="w-5 h-5 text-primary-400" />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const Analytics = ({ refreshKey }) => {
   const [portfolio, setPortfolio] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,6 +177,7 @@ const Analytics = ({ refreshKey }) => {
   const [timePeriod, setTimePeriod] = useState('ALL'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
   const [postingUser, setPostingUser] = useState('');
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
+  const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
 
   useEffect(() => {
     loadPortfolio();
@@ -278,10 +428,17 @@ const Analytics = ({ refreshKey }) => {
   const toggleHolding = (ticker) => {
     setExpandedHoldings(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(ticker)) {
+      const wasExpanded = newSet.has(ticker);
+      
+      if (wasExpanded) {
         newSet.delete(ticker);
       } else {
         newSet.add(ticker);
+        // Trigger animation when expanding
+        setAnimationTrigger(prev => ({
+          ...prev,
+          [ticker]: Date.now()
+        }));
       }
       return newSet;
     });
@@ -951,7 +1108,10 @@ const Analytics = ({ refreshKey }) => {
 
                       {/* User Distribution and Position Changes for CASH */}
                       {isExpanded && distribution.length > 0 && (
-                        <div className="grid md:grid-cols-2 gap-6 mt-6">
+                        <div className="relative grid md:grid-cols-2 gap-6 mt-6">
+                          {/* Cash Particles Animation */}
+                          <CashParticlesAnimation trigger={animationTrigger[stock.ticker]} distribution={distribution} />
+                          
                           <div className="flex flex-col">
                             <h5 className="text-lg font-semibold text-white mb-1">
                               Distribution by User
@@ -1076,13 +1236,22 @@ const Analytics = ({ refreshKey }) => {
                       </div>
 
                       {/* User Distribution and Position Changes for REAL ESTATE */}
-                      {isExpanded && distribution.length > 0 && (
-                        <div className="grid md:grid-cols-2 gap-6 mt-6">
-                          <div className="flex flex-col">
-                            <h5 className="text-lg font-semibold text-white mb-1">
-                              Distribution by User
-                            </h5>
-                            <div className="flex-shrink-0" style={{ height: '256px' }}>
+                      {isExpanded && (
+                        <>
+                          {distribution.length > 0 && (
+                            <div className="relative grid md:grid-cols-2 gap-6 mt-6">
+                              {/* Property Value Appreciation Animation - Overlay on pie chart area */}
+                              {animationTrigger[stock.ticker] && (
+                                <div className="absolute inset-0 pointer-events-none overflow-visible z-10" style={{ left: 0, top: 0, width: '100%', height: '100%' }}>
+                                  <RealEstateAnimation trigger={animationTrigger[stock.ticker]} />
+                                </div>
+                              )}
+                              
+                              <div className="flex flex-col">
+                                <h5 className="text-lg font-semibold text-white mb-1">
+                                  Distribution by User
+                                </h5>
+                                <div className="flex-shrink-0" style={{ height: '256px' }}>
                               <ResponsiveContainer width="100%" height="100%">
                                 <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                                   <Pie
@@ -1157,6 +1326,8 @@ const Analytics = ({ refreshKey }) => {
                           </div>
                         </div>
                       )}
+                        </>
+                      )}
                     </div>
                   </motion.div>
                 );
@@ -1223,7 +1394,11 @@ const Analytics = ({ refreshKey }) => {
                     {/* Portfolio Holdings Summary */}
                     {isExpanded && (
                       <>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
+                        <div className="relative">
+                          {/* Chart Arrow Animation */}
+                          <ChartArrowAnimation trigger={animationTrigger[stock.ticker]} />
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
                       <div>
                         <p className="text-xs text-slate-400 mb-1">Total Value</p>
                         <p className="text-lg font-bold text-white">
@@ -1375,6 +1550,7 @@ const Analytics = ({ refreshKey }) => {
                       </div>
                     </div>
                   )}
+                        </div>
                     </>
                   )}
 
