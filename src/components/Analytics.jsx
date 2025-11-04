@@ -870,14 +870,6 @@ const Analytics = ({ refreshKey }) => {
                         </div>
                       </div>
 
-                      {/* CASH Holdings Summary - Simplified */}
-                      <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                        <p className="text-xs text-slate-400 mb-1">Total Cash Amount</p>
-                        <p className="text-3xl font-bold text-green-400">
-                          ${stock.totalShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-
                       {/* User Distribution and Position Changes for CASH */}
                       {distribution.length > 0 && (
                         <div className="grid md:grid-cols-2 gap-6 mt-6">
@@ -1244,8 +1236,8 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
             allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
             break;
           case '1W':
-            // 1 week chart: Use Hourly, Daily, and Weekly
-            allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
+            // 1 week chart: Use Daily and Weekly (no hourly)
+            allowedCaptureTypes = ['DAILY', 'WEEKLY'];
             break;
           case '1M':
           case '3M':
@@ -1642,10 +1634,17 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
             <XAxis 
-              dataKey="date" 
+              dataKey="timestamp" 
+              type="number"
+              scale="linear"
+              domain={['dataMin', 'dataMax']}
               stroke="#94a3b8"
               tick={{ fill: '#94a3b8', fontSize: 12 }}
               axisLine={{ stroke: '#475569' }}
+              tickFormatter={(value) => {
+                const date = new Date(value);
+                return formatDateForChart(date, timePeriod);
+              }}
             />
             <YAxis 
               stroke="#94a3b8"
@@ -1660,45 +1659,13 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                   return null;
                 }
                 
-                // For ALL view, find the nearest point based on X coordinate
-                if (timePeriod === 'ALL' && props.coordinate && chartData.length > 0) {
-                  // Get the X coordinate of the cursor relative to the chart
-                  const cursorX = props.coordinate.x;
-                  const chartWidth = props.viewBox?.width || 800;
-                  const marginLeft = 20; // Left margin from chart config
-                  const effectiveWidth = chartWidth - marginLeft * 2;
-                  const adjustedX = cursorX - marginLeft;
-                  
-                  // Calculate which data point index corresponds to the cursor position
-                  // Data points are evenly spaced across the chart width
-                  const pointSpacing = effectiveWidth / Math.max(1, chartData.length - 1);
-                  const nearestIndex = Math.round(adjustedX / pointSpacing);
-                  const clampedIndex = Math.max(0, Math.min(nearestIndex, chartData.length - 1));
-                  const nearestPoint = chartData[clampedIndex];
-                  
-                  if (nearestPoint) {
-                    return (
-                      <div 
-                        className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
-                        style={{
-                          backgroundColor: '#1e293b',
-                          border: '1px solid #475569',
-                          borderRadius: '8px',
-                        }}
-                      >
-                        <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
-                          {nearestPoint.date}
-                        </p>
-                        <p style={{ color: '#ffffff', fontWeight: 'bold' }}>
-                          ${nearestPoint.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                    );
-                  }
-                }
-                
-                // Default tooltip for other views
+                // Use default tooltip behavior for all time periods (including ALL)
+                // Recharts handles snapping automatically
                 const payload = props.payload[0];
+                // Get the formatted date from the payload data, or convert the timestamp label
+                const dataPoint = payload.payload;
+                const formattedDate = dataPoint?.date || (props.label ? formatDateForChart(new Date(props.label), timePeriod) : '');
+                
                 return (
                   <div 
                     className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
@@ -1709,7 +1676,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                     }}
                   >
                     <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
-                      {props.label || payload.name || ''}
+                      {formattedDate}
                     </p>
                     <p style={{ color: '#ffffff', fontWeight: 'bold' }}>
                       ${payload.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
