@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign } from 'lucide-react';
+import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
@@ -27,6 +27,7 @@ const Analytics = ({ refreshKey }) => {
   const [holdingsHistory, setHoldingsHistory] = useState([]);
   const [timePeriod, setTimePeriod] = useState('ALL'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
   const [postingUser, setPostingUser] = useState('');
+  const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
 
   useEffect(() => {
     loadPortfolio();
@@ -199,6 +200,20 @@ const Analytics = ({ refreshKey }) => {
           continue;
         }
         
+        // Handle REAL ESTATE entries - they don't need stock data lookup
+        if (ticker === 'REAL ESTATE') {
+          quoteMap[ticker] = {
+            price: 1.0, // Real estate is always $1.00 per "share" (dollar)
+            dividendYield: 0,
+            changeDollar: 0,
+            changePercent: 0,
+            name: 'Real Estate',
+            symbol: 'REAL ESTATE',
+            visualSymbol: 'REAL ESTATE',
+          };
+          continue;
+        }
+        
         try {
           const quote = await getStockQuote(ticker);
           quoteMap[ticker] = quote; // Store full quote object with all Sheet2 data
@@ -220,8 +235,9 @@ const Analytics = ({ refreshKey }) => {
         const price = quote.price || 0;
         const dividendYield = quote.dividendYield || 0;
         
-        // For cash, the "shares" is actually the dollar amount, and price is $1.00
+        // For cash and real estate, the "shares" is actually the dollar amount, and price is $1.00
         const isCash = ticker === 'CASH' || ticker === 'USD';
+        const isRealEstate = ticker === 'REAL ESTATE';
         
         return {
           id: index + 1,
@@ -230,9 +246,10 @@ const Analytics = ({ refreshKey }) => {
           shares,
           price,
           dividendYield,
-          value: shares * price, // For cash: amount * 1.0 = amount
+          value: shares * price, // For cash/real estate: amount * 1.0 = amount
           yearlyDividend: shares * price * (dividendYield / 100),
           isCash, // Flag to identify cash holdings
+          isRealEstate, // Flag to identify real estate holdings
           // Store full quote data for detailed display
           fullQuote: quote,
         };
@@ -256,6 +273,19 @@ const Analytics = ({ refreshKey }) => {
   const filteredPortfolio = useMemo(() => {
     return portfolio.filter(item => selectedUsers.has(item.username));
   }, [portfolio, selectedUsers]);
+
+  // Toggle expansion state for a holding
+  const toggleHolding = (ticker) => {
+    setExpandedHoldings(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(ticker)) {
+        newSet.delete(ticker);
+      } else {
+        newSet.add(ticker);
+      }
+      return newSet;
+    });
+  };
 
   // Get all unique users from both portfolio and holdings history
   const allUsers = useMemo(() => {
@@ -309,6 +339,7 @@ const Analytics = ({ refreshKey }) => {
           dividendYield: item.dividendYield || 0,
           totalYearlyDividend: 0,
           isCash: item.isCash || false,
+          isRealEstate: item.isRealEstate || false,
           fullQuote: item.fullQuote || {}, // Store full quote data for detailed metrics
         };
       }
@@ -349,7 +380,7 @@ const Analytics = ({ refreshKey }) => {
     
     return Object.entries(stockTotals)
       .map(([ticker, value]) => ({
-        name: ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker,
+        name: ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker === 'REAL ESTATE' ? 'REAL ESTATE' : ticker,
         value: Number(value.toFixed(2)),
       }))
       .sort((a, b) => b.value - a.value);
@@ -864,17 +895,19 @@ const Analytics = ({ refreshKey }) => {
         </div>
         
         <div className="space-y-6">
-          {/* Separate CASH and Stocks */}
+          {/* Separate CASH, REAL ESTATE, and Stocks */}
           {(() => {
             const cashHoldings = stockTotals.filter(s => s.isCash);
-            const stockHoldings = stockTotals.filter(s => !s.isCash);
-            const sortedHoldings = [...cashHoldings, ...stockHoldings];
+            const realEstateHoldings = stockTotals.filter(s => s.isRealEstate);
+            const stockHoldings = stockTotals.filter(s => !s.isCash && !s.isRealEstate);
+            const sortedHoldings = [...cashHoldings, ...realEstateHoldings, ...stockHoldings];
             
             return sortedHoldings.map((stock, stockIndex) => {
               const distribution = getStockDistribution(stock.ticker);
               
               // Special rendering for CASH
               if (stock.isCash) {
+                const isExpanded = expandedHoldings.has(stock.ticker);
                 return (
                   <motion.div
                     key={stock.ticker}
@@ -884,25 +917,40 @@ const Analytics = ({ refreshKey }) => {
                     className="border-b border-slate-700 pb-6"
                   >
                     <div className="space-y-6">
-                      {/* CASH Header */}
-                      <div className="flex items-center gap-3">
+                      {/* CASH Header - Clickable to toggle */}
+                      <div 
+                        className="flex items-center gap-3 cursor-pointer hover:bg-slate-800/50 p-2 rounded-lg transition-colors"
+                        onClick={() => toggleHolding(stock.ticker)}
+                      >
                         <div className="p-3 bg-green-500/20 rounded-lg">
                           <DollarSign className="w-6 h-6 text-green-400" />
                         </div>
                         <div className="flex-1">
-                          <h4 className="text-3xl font-bold text-green-400 mb-1">CASH</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-3xl font-bold text-green-400 mb-1">CASH</h4>
+                            {isExpanded ? (
+                              <ChevronUp className="w-5 h-5 text-slate-400" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-slate-400" />
+                            )}
+                          </div>
                           <p className="text-slate-400 text-sm">Cash Holdings</p>
                         </div>
                         <div className="text-right">
                           <div className="text-2xl font-bold text-white">
-                            ${stock.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <p className="text-sm text-slate-400">Total Cash Value</p>
+                          {!isExpanded && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Price: $1.00 • Total Shares: {(stock.totalShares || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          )}
                         </div>
                       </div>
 
                       {/* User Distribution and Position Changes for CASH */}
-                      {distribution.length > 0 && (
+                      {isExpanded && distribution.length > 0 && (
                         <div className="grid md:grid-cols-2 gap-6 mt-6">
                           <div className="flex flex-col">
                             <h5 className="text-lg font-semibold text-white mb-1">
@@ -983,7 +1031,139 @@ const Analytics = ({ refreshKey }) => {
                 );
               }
               
+              // Special rendering for REAL ESTATE
+              if (stock.isRealEstate) {
+                const isExpanded = expandedHoldings.has(stock.ticker);
+                return (
+                  <motion.div
+                    key={stock.ticker}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="border-b border-slate-700 pb-6"
+                  >
+                    <div className="space-y-6">
+                      {/* REAL ESTATE Header - Clickable to toggle */}
+                      <div 
+                        className="flex items-center gap-3 cursor-pointer hover:bg-slate-800/50 p-2 rounded-lg transition-colors"
+                        onClick={() => toggleHolding(stock.ticker)}
+                      >
+                        <div className="p-3 bg-red-500/20 rounded-lg">
+                          <Home className="w-6 h-6 text-red-400" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-3xl font-bold text-red-400 mb-1">REAL ESTATE</h4>
+                            {isExpanded ? (
+                              <ChevronUp className="w-5 h-5 text-slate-400" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-slate-400" />
+                            )}
+                          </div>
+                          <p className="text-slate-400 text-sm">Real Estate Holdings</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-white">
+                            ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <p className="text-sm text-slate-400">Total Real Estate Value</p>
+                          {!isExpanded && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Price: $1.00 • Total Shares: {(stock.totalShares || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* User Distribution and Position Changes for REAL ESTATE */}
+                      {isExpanded && distribution.length > 0 && (
+                        <div className="grid md:grid-cols-2 gap-6 mt-6">
+                          <div className="flex flex-col">
+                            <h5 className="text-lg font-semibold text-white mb-1">
+                              Distribution by User
+                            </h5>
+                            <div className="flex-shrink-0" style={{ height: '256px' }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
+                                  <Pie
+                                    data={distribution}
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={false}
+                                    label={({ name, value, percent }) => {
+                                      if (percent < 0.04) {
+                                        return '';
+                                      }
+                                      return `${name}: ${(percent * 100).toFixed(0)}%`;
+                                    }}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    dataKey="value"
+                                  >
+                                    {distribution.map((entry, index) => {
+                                      // Always use red for Real Estate
+                                      const isRealEstate = entry.name === 'REAL ESTATE';
+                                      const fillColor = isRealEstate ? '#ef4444' : COLORS[index % COLORS.length];
+                                      return (
+                                        <Cell key={`cell-${index}`} fill={fillColor} stroke="none" />
+                                      );
+                                    })}
+                                  </Pie>
+                                  <Tooltip content={<CustomTooltip />} />
+                                </RechartsPieChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="flex-grow pt-1">
+                              <div className="flex flex-wrap justify-center gap-4">
+                                {distribution.map((entry, index) => {
+                                  // Always use red for Real Estate
+                                  const isRealEstate = entry.name === 'REAL ESTATE';
+                                  const color = isRealEstate ? '#ef4444' : COLORS[index % COLORS.length];
+                                  return (
+                                    <div key={`legend-${index}`} className="flex items-center gap-2">
+                                      <div 
+                                        className="w-3 h-3 rounded-full" 
+                                        style={{ backgroundColor: color }}
+                                      />
+                                      <span className={`text-sm ${isRealEstate ? 'text-red-400' : 'text-slate-300'}`}>{entry.name}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <h5 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                              <Trophy className="w-5 h-5 text-yellow-500" />
+                              Position Changes (Past 30 days)
+                            </h5>
+                            <StockGainsLeaderboard 
+                              ticker={stock.ticker} 
+                              gains={getStockGains(stock.ticker)} 
+                              getChatsForUserAndTicker={getChatsForTicker}
+                              allUsers={allUsers}
+                              postingUser={postingUser}
+                              setPostingUser={setPostingUser}
+                              onChatSubmit={async (ticker, message, postingUser, positionUsername) => {
+                                try {
+                                  await updateHoldingsHistoryChat(ticker, message, postingUser, positionUsername);
+                                  loadHoldingsHistory(); // Refresh to show new chat
+                                } catch (error) {
+                                  console.error('Error submitting chat:', error);
+                                  alert(`Failed to submit chat: ${error.message}`);
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              }
+              
               // Regular stock rendering
+              const isExpanded = expandedHoldings.has(stock.ticker);
               return (
                 <motion.div
                   key={stock.ticker}
@@ -993,12 +1173,22 @@ const Analytics = ({ refreshKey }) => {
                   className="border-t border-slate-700 pt-6"
                 >
                   <div className="space-y-6">
-                    {/* Stock Header with Price and Change */}
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="text-3xl font-bold text-white mb-1">
-                          {stock.fullQuote?.symbol || stock.ticker}
-                        </h4>
+                    {/* Stock Header with Price and Change - Clickable to toggle */}
+                    <div 
+                      className="flex items-start justify-between cursor-pointer hover:bg-slate-800/50 p-2 rounded-lg transition-colors"
+                      onClick={() => toggleHolding(stock.ticker)}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-3xl font-bold text-white mb-1">
+                            {stock.fullQuote?.symbol || stock.ticker}
+                          </h4>
+                          {isExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-slate-400" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                          )}
+                        </div>
                         {stock.fullQuote?.name && (
                           <p className="text-slate-400 text-sm">{stock.fullQuote.name}</p>
                         )}
@@ -1017,11 +1207,23 @@ const Analytics = ({ refreshKey }) => {
                             {(stock.fullQuote.changePercent || 0).toFixed(2)}%)
                           </div>
                         )}
+                        {!isExpanded && (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-xs text-slate-500">
+                              Total Value: ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Total Shares: {(stock.totalShares || 0).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     {/* Portfolio Holdings Summary */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
+                    {isExpanded && (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
                       <div>
                         <p className="text-xs text-slate-400 mb-1">Total Value</p>
                         <p className="text-lg font-bold text-white">
@@ -1173,9 +1375,11 @@ const Analytics = ({ refreshKey }) => {
                       </div>
                     </div>
                   )}
+                    </>
+                  )}
 
                   {/* User Distribution - Pie Chart and Bar Chart */}
-                  {distribution.length > 0 && (
+                  {isExpanded && distribution.length > 0 && (
                     <div className="grid md:grid-cols-2 gap-6 mt-6">
                       <div className="flex flex-col">
                         <h5 className="text-lg font-semibold text-white mb-1">
@@ -1886,8 +2090,9 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
   const visibleItems = 5;
   const maxHeight = itemHeight * visibleItems;
 
-  // Determine if this is cash
+  // Determine if this is cash or real estate
   const isCash = ticker === 'CASH' || ticker === 'USD';
+  const isRealEstate = ticker === 'REAL ESTATE';
 
   return (
     <div className="space-y-4">
@@ -1941,7 +2146,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
                   <div>
                     <p className="font-semibold text-white">{entry.username}</p>
                     <p className="text-xs text-slate-400">
-                      {isCash 
+                      {isCash || isRealEstate
                         ? `$${entry.oldShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → $${entry.currentShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                         : `${entry.oldShares.toFixed(2)} → ${entry.currentShares.toFixed(2)} shares`}
                     </p>
@@ -1957,12 +2162,12 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
                       <TrendingDown className="w-4 h-4" />
                     ) : null}
                     <span>
-                      {isCash 
+                      {isCash || isRealEstate
                         ? `${entry.gain >= 0 ? '+' : ''}$${Math.abs(entry.gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                         : `${entry.gain > 0 ? '+' : ''}${entry.gain.toFixed(2)}`}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{isCash ? 'USD' : 'shares'}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{isCash || isRealEstate ? 'USD' : 'shares'}</p>
                 </div>
               </div>
             </motion.div>

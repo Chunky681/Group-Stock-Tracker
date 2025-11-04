@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Edit2, Save, X, TrendingUp, DollarSign, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { Edit2, Save, X, TrendingUp, DollarSign, RefreshCw, Plus, Trash2, Home } from 'lucide-react';
 import { readSheetData, updateRow, initializeSheet, deleteRow } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
@@ -46,10 +46,16 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       const uniqueTickers = [...new Set(userRows.map(row => row[1]?.trim().toUpperCase()))];
       const priceMap = {};
       
-      // Fetch prices for all tickers (skip CASH/USD)
+      // Fetch prices for all tickers (skip CASH/USD and REAL ESTATE)
       for (const ticker of uniqueTickers) {
         // Handle cash - price is always $1.00
         if (ticker === 'CASH' || ticker === 'USD') {
+          priceMap[ticker] = 1.0;
+          continue;
+        }
+        
+        // Handle real estate - price is always $1.00
+        if (ticker === 'REAL ESTATE') {
           priceMap[ticker] = 1.0;
           continue;
         }
@@ -98,6 +104,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
           existing.shares += shares;
         } else {
           const isCash = ticker === 'CASH' || ticker === 'USD';
+          const isRealEstate = ticker === 'REAL ESTATE';
           const rowIndices = rowIndicesMap.get(ticker) || [];
           holdingsMap.set(ticker, {
             ticker,
@@ -106,6 +113,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
             value: shares * (priceMap[ticker] || 0),
             rowIndex: rowIndices[0] || null, // Store first row index for updates
             isCash, // Flag to identify cash holdings
+            isRealEstate, // Flag to identify real estate holdings
           });
         }
       });
@@ -113,7 +121,13 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       setAllRowIndices(rowIndicesMap);
       
       const holdingsArray = Array.from(holdingsMap.values())
-        .sort((a, b) => a.ticker.localeCompare(b.ticker));
+        .sort((a, b) => {
+          if (a.ticker === 'CASH' || a.ticker === 'USD') return -1;
+          if (b.ticker === 'CASH' || b.ticker === 'USD') return 1;
+          if (a.ticker === 'REAL ESTATE') return -1;
+          if (b.ticker === 'REAL ESTATE') return 1;
+          return a.ticker.localeCompare(b.ticker);
+        });
       
       setHoldings(holdingsArray);
     } catch (error) {
@@ -133,6 +147,12 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       for (const ticker of uniqueTickers) {
         // Handle cash - price is always $1.00
         if (ticker === 'CASH' || ticker === 'USD') {
+          priceMap[ticker] = 1.0;
+          continue;
+        }
+        
+        // Handle real estate - price is always $1.00
+        if (ticker === 'REAL ESTATE') {
           priceMap[ticker] = 1.0;
           continue;
         }
@@ -171,7 +191,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
   };
 
   const handleDelete = async (ticker) => {
-    if (!window.confirm(`Are you sure you want to delete ${ticker === 'CASH' || ticker === 'USD' ? 'cash holdings' : ticker}? This action cannot be undone.`)) {
+    if (!window.confirm(`Are you sure you want to delete ${ticker === 'CASH' || ticker === 'USD' ? 'cash holdings' : ticker === 'REAL ESTATE' ? 'real estate holdings' : ticker}? This action cannot be undone.`)) {
       return;
     }
     
@@ -393,13 +413,18 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                     {holding.isCash && (
                       <DollarSign className="w-5 h-5 text-green-500" />
                     )}
-                    <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : 'text-white'}`}>
-                      {holding.isCash ? 'CASH' : holding.ticker}
+                    {holding.isRealEstate && (
+                      <Home className="w-5 h-5 text-red-500" />
+                    )}
+                    <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-red-500' : 'text-white'}`}>
+                      {holding.isCash ? 'CASH' : holding.isRealEstate ? 'REAL ESTATE' : holding.ticker}
                     </h4>
                   </div>
                   <p className="text-slate-400 text-sm mb-3">
                     {holding.isCash 
                       ? 'Cash Holdings'
+                      : holding.isRealEstate
+                      ? 'Real Estate Holdings'
                       : `$${holding.price.toFixed(2)} per share`}
                   </p>
                   
@@ -407,7 +432,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                     <div className="flex items-center gap-3 mt-4">
                       <div className="flex flex-col gap-1">
                         <label className="text-xs text-slate-400">
-                          {holding.isCash ? 'Cash Amount ($)' : 'Number of Shares'}
+                          {holding.isCash ? 'Cash Amount ($)' : holding.isRealEstate ? 'Real Estate Value ($)' : 'Number of Shares'}
                         </label>
                         <input
                           type="number"
@@ -456,16 +481,14 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                     </div>
                   ) : (
                     <div className="flex items-center gap-6 mt-4">
-                      <div>
-                        <p className="text-sm text-slate-400 mb-1">
-                          {holding.isCash ? 'Cash Amount' : 'Shares'}
-                        </p>
-                        <p className="text-lg font-semibold text-white">
-                          {holding.isCash 
-                            ? `$${holding.shares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : holding.shares.toFixed(2)}
-                        </p>
-                      </div>
+                      {!(holding.isRealEstate || holding.isCash) && (
+                        <div>
+                          <p className="text-sm text-slate-400 mb-1">Shares</p>
+                          <p className="text-lg font-semibold text-white">
+                            {holding.shares.toFixed(2)}
+                          </p>
+                        </div>
+                      )}
                       <div>
                         <p className="text-sm text-slate-400 mb-1">Total Value</p>
                         <p className="text-lg font-semibold text-white">

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, User, Search, BarChart3, DollarSign } from 'lucide-react';
+import { TrendingUp, User, Search, BarChart3, DollarSign, Home } from 'lucide-react';
 import StockSearch from './components/StockSearch';
 import AddStockForm from './components/AddStockForm';
 import AddCashForm from './components/AddCashForm';
+import AddRealEstateForm from './components/AddRealEstateForm';
 import UserSelector from './components/UserSelector';
 import UserHoldings from './components/UserHoldings';
 import Analytics from './components/Analytics';
@@ -14,7 +15,7 @@ function App() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' or 'stocks'
   const [portfolioKey, setPortfolioKey] = useState(0);
-  const [addType, setAddType] = useState('stock'); // 'stock' or 'cash'
+  const [addType, setAddType] = useState('stock'); // 'stock', 'cash', or 'realestate'
 
   const handleStockSelected = (stockData) => {
     setSelectedStock(stockData);
@@ -182,10 +183,15 @@ function App() {
                                   <Search className="w-5 h-5 text-primary-400" />
                                   Add New Stock
                                 </>
-                              ) : (
+                              ) : addType === 'cash' ? (
                                 <>
                                   <DollarSign className="w-5 h-5 text-green-500" />
                                   Add Cash Holdings
+                                </>
+                              ) : (
+                                <>
+                                  <Home className="w-5 h-5 text-red-500" />
+                                  Add Real Estate Holdings
                                 </>
                               )}
                             </h4>
@@ -218,6 +224,20 @@ function App() {
                               >
                                 Cash
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddType('realestate');
+                                  setSelectedStock(null);
+                                }}
+                                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                                  addType === 'realestate'
+                                    ? 'bg-red-500 text-white'
+                                    : 'text-slate-400 hover:text-slate-300'
+                                }`}
+                              >
+                                Real Estate
+                              </button>
                             </div>
                           </div>
                           
@@ -231,8 +251,14 @@ function App() {
                                 refreshKey={portfolioKey}
                               />
                             </>
-                          ) : (
+                          ) : addType === 'cash' ? (
                             <AddCashForm
+                              selectedUser={selectedUser}
+                              onSuccess={handleStockAdded}
+                              refreshKey={portfolioKey}
+                            />
+                          ) : (
+                            <AddRealEstateForm
                               selectedUser={selectedUser}
                               onSuccess={handleStockAdded}
                               refreshKey={portfolioKey}
