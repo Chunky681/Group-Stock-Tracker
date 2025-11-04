@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
@@ -2026,6 +2026,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [chatMessage, setChatMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const chatContainerRef = useRef(null);
 
   // Get chats for the selected entry
   const chats = useMemo(() => {
@@ -2033,11 +2034,11 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
     return getChatsForUserAndTicker(ticker, selectedEntry.username);
   }, [selectedEntry, ticker, getChatsForUserAndTicker]);
 
-  // Parse chat messages from the string (newline-separated)
+  // Parse chat messages from the string (newline-separated) and reverse order (newest first)
   const parsedChats = useMemo(() => {
     if (!chats || !chats.trim()) return [];
     
-    return chats.split('\n').filter(line => line.trim()).map(line => {
+    const parsed = chats.split('\n').filter(line => line.trim()).map(line => {
       // Parse format: "Username: Message (timestamp)"
       const match = line.match(/^(.+?):\s*(.+?)\s*\((.+?)\)$/);
       if (match) {
@@ -2054,7 +2055,17 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
         timestamp: '',
       };
     });
+    
+    // Reverse to show newest first (oldest at bottom)
+    return parsed.reverse();
   }, [chats]);
+
+  // Scroll to top of chat container when chats update
+  useEffect(() => {
+    if (chatContainerRef.current && parsedChats.length > 0) {
+      chatContainerRef.current.scrollTop = 0;
+    }
+  }, [parsedChats.length, chats]); // Scroll when chats change
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -2066,7 +2077,14 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
     try {
       await onChatSubmit(ticker, chatMessage.trim(), postingUser.trim(), selectedEntry.username);
       setChatMessage('');
-      setSelectedEntry(null);
+      // Keep the chat window open - the parent component will refresh holdings,
+      // which will cause `chats` to re-evaluate and show the new message
+      // Scroll to top after a brief delay to ensure DOM has updated
+      setTimeout(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = 0;
+        }
+      }, 100);
     } catch (error) {
       console.error('Error submitting chat:', error);
     } finally {
@@ -2090,6 +2108,113 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
   const visibleItems = 5;
   const maxHeight = itemHeight * visibleItems;
 
+  // Helper function to get chat counts for an entry
+  const getChatCounts = (username) => {
+    if (!getChatsForUserAndTicker) return { total: 0, today: 0, last24Hours: 0 };
+    
+    const chatsString = getChatsForUserAndTicker(ticker, username);
+    if (!chatsString || !chatsString.trim()) return { total: 0, today: 0, last24Hours: 0 };
+    
+    const chatLines = chatsString.split('\n').filter(line => line.trim());
+    const total = chatLines.length;
+    
+    // Count today's chats - normalize dates to compare just year/month/day
+    const today = new Date();
+    const todayYear = today.getFullYear();
+    const todayMonth = today.getMonth();
+    const todayDay = today.getDate();
+    
+    const todayCount = chatLines.filter(line => {
+      const match = line.match(/\((.+?)\)$/);
+      if (match) {
+        const timestamp = match[1].trim();
+        try {
+          const chatDate = new Date(timestamp);
+          if (isNaN(chatDate.getTime())) return false;
+          
+          // Compare year, month, and day
+          return chatDate.getFullYear() === todayYear &&
+                 chatDate.getMonth() === todayMonth &&
+                 chatDate.getDate() === todayDay;
+        } catch (e) {
+          return false;
+        }
+      }
+      return false;
+    }).length;
+    
+    // Count chats from past 24 hours
+    const now = new Date();
+    const last24Hours = now.getTime() - (24 * 60 * 60 * 1000); // 24 hours ago in milliseconds
+    
+    const last24HoursCount = chatLines.filter(line => {
+      const match = line.match(/\((.+?)\)$/);
+      if (match) {
+        const timestamp = match[1].trim();
+        try {
+          let chatDate = null;
+          
+          // Parse format: "Nov 4, 12:23 AM" or "Nov 3, 8:35 PM"
+          const parts = timestamp.split(',');
+          if (parts.length >= 2) {
+            const datePart = parts[0].trim(); // "Nov 4" or "Nov 3"
+            const timePart = parts[1].trim(); // "12:23 AM" or "8:35 PM"
+            const currentYear = new Date().getFullYear();
+            
+            // Parse month name format: "Nov 4" -> month=10, day=4
+            const monthMatch = datePart.match(/(\w+)\s+(\d+)/);
+            if (monthMatch) {
+              const monthName = monthMatch[1];
+              const day = parseInt(monthMatch[2]);
+              const monthMap = {
+                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+                'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+              };
+              const month = monthMap[monthName];
+              
+              if (month !== undefined) {
+                // Parse time part: "12:23 AM" or "8:35 PM"
+                const timeMatch = timePart.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                if (timeMatch) {
+                  let hours = parseInt(timeMatch[1]);
+                  const minutes = parseInt(timeMatch[2]);
+                  const ampm = timeMatch[3].toUpperCase();
+                  
+                  // Convert to 24-hour format
+                  if (ampm === 'PM' && hours !== 12) {
+                    hours += 12;
+                  } else if (ampm === 'AM' && hours === 12) {
+                    hours = 0;
+                  }
+                  
+                  chatDate = new Date(currentYear, month, day, hours, minutes, 0);
+                }
+              }
+            }
+          }
+          
+          // Fallback: try standard Date parsing
+          if (!chatDate || isNaN(chatDate.getTime())) {
+            chatDate = new Date(timestamp);
+          }
+          
+          // Check if we have a valid date and if it's within past 24 hours
+          if (chatDate && !isNaN(chatDate.getTime())) {
+            return chatDate.getTime() >= last24Hours;
+          }
+          
+          return false;
+        } catch (e) {
+          console.error('Error parsing chat timestamp:', timestamp, e);
+          return false;
+        }
+      }
+      return false;
+    }).length;
+    
+    return { total, today: todayCount, last24Hours: last24HoursCount };
+  };
+
   // Determine if this is cash or real estate
   const isCash = ticker === 'CASH' || ticker === 'USD';
   const isRealEstate = ticker === 'REAL ESTATE';
@@ -2105,16 +2230,29 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
           const isPositive = entry.gain > 0;
           const isNegative = entry.gain < 0;
           const isSelected = selectedEntry?.username === entry.username;
+          const chatCounts = getChatCounts(entry.username);
+          const hasChats = chatCounts.total > 0;
           
           return (
             <motion.div
               key={`${entry.username}-${ticker}`}
               initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              animate={{ 
+                opacity: 1, 
+                x: 0,
+                scale: chatCounts.today > 0 && !isSelected ? [1, 1.01, 1] : 1
+              }}
+              transition={{ 
+                delay: index * 0.05,
+                scale: chatCounts.today > 0 && !isSelected ? {
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                } : {}
+              }}
+              className={`p-3 rounded-lg border cursor-pointer transition-all relative group ${
                 isSelected
-                  ? 'bg-primary-500/20 border-primary-500/50'
+                  ? 'bg-primary-500/20 border-primary-500/50 shadow-lg shadow-primary-500/20'
                   : index === 0 && isPositive
                   ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 border-yellow-500/50'
                   : isPositive
@@ -2122,11 +2260,19 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
                   : isNegative
                   ? 'bg-slate-800/50 border-red-500/30'
                   : 'bg-slate-800/50 border-slate-700'
-              } hover:border-primary-500/50`}
+              } hover:border-primary-500/50 hover:shadow-lg hover:shadow-primary-500/10 hover:scale-[1.02] ${chatCounts.today > 0 ? 'ring-2 ring-primary-500/30' : ''}`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => {
-                setSelectedEntry(entry);
-                if (!postingUser && allUsers.length > 0 && setPostingUser) {
-                  setPostingUser(allUsers[0]);
+                // Toggle chat window: close if already selected, open otherwise
+                if (isSelected) {
+                  setSelectedEntry(null);
+                  setChatMessage(''); // Clear message when closing
+                } else {
+                  setSelectedEntry(entry);
+                  if (!postingUser && allUsers.length > 0 && setPostingUser) {
+                    setPostingUser(allUsers[0]);
+                  }
                 }
               }}
             >
@@ -2143,8 +2289,55 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
                   }`}>
                     {index + 1}
                   </div>
-                  <div>
-                    <p className="font-semibold text-white">{entry.username}</p>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-white">{entry.username}</p>
+                      {hasChats && (
+                        <motion.div
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="flex items-center gap-1.5"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 text-primary-400" />
+                          <span className="text-xs font-semibold text-primary-400">{chatCounts.total}</span>
+                          {chatCounts.today > 0 && (
+                            <motion.span 
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="text-xs font-bold text-green-400 bg-green-500/20 px-1.5 py-0.5 rounded-full border border-green-500/30"
+                            >
+                              +{chatCounts.today} today
+                            </motion.span>
+                          )}
+                        </motion.div>
+                      )}
+                      {/* 24-hour notification badge - Always show if there are chats, even if count is 0 */}
+                      {hasChats && (
+                        <motion.div
+                          initial={{ scale: 0, rotate: -180 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          className="relative"
+                          title={`${chatCounts.last24Hours} new message${chatCounts.last24Hours !== 1 ? 's' : ''} in the last 24 hours`}
+                        >
+                          {chatCounts.last24Hours > 0 ? (
+                            <div className="relative">
+                              <div className="w-4 h-4 bg-primary-500 rounded-full flex items-center justify-center">
+                                <span className="text-[10px] font-bold text-white">
+                                  {chatCounts.last24Hours > 9 ? '9+' : chatCounts.last24Hours}
+                                </span>
+                              </div>
+                              <motion.div
+                                animate={{ scale: [1, 1.2, 1] }}
+                                transition={{ duration: 2, repeat: Infinity }}
+                                className="absolute inset-0 bg-primary-400 rounded-full opacity-50"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-4 h-4 bg-slate-600 rounded-full opacity-50" />
+                          )}
+                        </motion.div>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-400">
                       {isCash || isRealEstate
                         ? `$${entry.oldShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → $${entry.currentShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2152,22 +2345,35 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className={`flex items-center gap-1 font-bold ${
-                    isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-400'
-                  }`}>
-                    {isPositive ? (
-                      <TrendingUp className="w-4 h-4" />
-                    ) : isNegative ? (
-                      <TrendingDown className="w-4 h-4" />
-                    ) : null}
-                    <span>
-                      {isCash || isRealEstate
-                        ? `${entry.gain >= 0 ? '+' : ''}$${Math.abs(entry.gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : `${entry.gain > 0 ? '+' : ''}${entry.gain.toFixed(2)}`}
-                    </span>
+                <div className="text-right flex items-center gap-3">
+                  {/* Chat indicator badge */}
+                  {!hasChats && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="hidden group-hover:flex items-center gap-1 px-2 py-1 bg-primary-500/20 border border-primary-500/50 rounded-lg"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-primary-400" />
+                      <span className="text-xs text-primary-400 font-medium">Click to chat</span>
+                    </motion.div>
+                  )}
+                  <div>
+                    <div className={`flex items-center gap-1 font-bold ${
+                      isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-400'
+                    }`}>
+                      {isPositive ? (
+                        <TrendingUp className="w-4 h-4" />
+                      ) : isNegative ? (
+                        <TrendingDown className="w-4 h-4" />
+                      ) : null}
+                      <span>
+                        {isCash || isRealEstate
+                          ? `${entry.gain >= 0 ? '+' : ''}$${Math.abs(entry.gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : `${entry.gain > 0 ? '+' : ''}${entry.gain.toFixed(2)}`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">{isCash || isRealEstate ? 'USD' : 'shares'}</p>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{isCash || isRealEstate ? 'USD' : 'shares'}</p>
                 </div>
               </div>
             </motion.div>
@@ -2187,7 +2393,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
             
             {/* Existing Chat Messages */}
             {parsedChats.length > 0 && (
-              <div className="mb-3 max-h-32 overflow-y-auto space-y-2">
+              <div ref={chatContainerRef} className="mb-3 max-h-32 overflow-y-auto space-y-2">
                 {parsedChats.map((chat, idx) => (
                   <div key={idx} className="text-xs bg-slate-900/50 p-2 rounded border border-slate-700">
                     <span className="font-semibold text-primary-400">{chat.username}:</span>
