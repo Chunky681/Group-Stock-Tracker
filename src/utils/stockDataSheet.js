@@ -1,6 +1,7 @@
 // Stock Data from Google Sheets (Sheet2)
 // Uses Visual Symbol column for all lookups and display
 import { readSheetData } from './googleSheets';
+// Note: Read tracking is now handled in googleSheets.js
 
 // Cache for stock data to minimize read requests
 let stockDataCache = null;
@@ -29,9 +30,6 @@ const COLUMNS = {
   DIVIDEND_YIELD: 16, // Note: Column header has typo "Divident Yeild"
 };
 
-let readRequestCount = 0;
-export const getReadRequestCount = () => readRequestCount;
-
 // Parse a numeric value, handling empty strings and commas
 const parseNumber = (value) => {
   if (!value || value === '' || value === '-') return 0;
@@ -53,7 +51,7 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
   }
 
   // Fetch fresh data
-  readRequestCount++;
+  // Note: readRequestCount is now tracked in googleSheets.js readSheetData function
   try {
     const data = await readSheetData('Sheet2!A1:Q1000'); // Updated to Q to include Dividend Yield column
     
@@ -180,8 +178,5 @@ export const clearStockDataCache = () => {
   cacheTimestamp = null;
 };
 
-// Reset read count (for session tracking)
-export const resetReadCount = () => {
-  readRequestCount = 0;
-};
+// Note: Reset functions moved to googleSheets.js for centralized tracking
 

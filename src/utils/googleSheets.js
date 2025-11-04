@@ -3,6 +3,17 @@ import { getAccessToken, initializeGoogleAuth } from './googleAuth';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
+// Track API calls for session monitoring
+let readRequestCount = 0;
+let writeRequestCount = 0;
+
+export const getReadRequestCount = () => readRequestCount;
+export const getWriteRequestCount = () => writeRequestCount;
+export const resetRequestCounts = () => {
+  readRequestCount = 0;
+  writeRequestCount = 0;
+};
+
 const getApiKey = () => {
   const key = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY || '';
   if (!key || key === 'your_api_key_here' || key.trim() === '') {
@@ -46,6 +57,9 @@ export const readSheetData = async (range = 'Sheet1!A1:D1000') => {
   }
 
   try {
+    // Track read request
+    readRequestCount++;
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?key=${apiKey}`
     );
@@ -85,6 +99,9 @@ export const appendRow = async (rowData) => {
   const range = 'Sheet1!A:D';
   
   try {
+    // Track write request
+    writeRequestCount++;
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
       {
@@ -95,8 +112,8 @@ export const appendRow = async (rowData) => {
         },
         body: JSON.stringify({
           values: [rowData],
-      }),
-    }
+        }),
+      }
     );
     
     const data = await response.json();
@@ -134,6 +151,9 @@ export const updateRow = async (rowIndex, rowData) => {
   const range = `Sheet1!A${rowIndex}:D${rowIndex}`;
   
   try {
+    // Track write request
+    writeRequestCount++;
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
       {
@@ -182,6 +202,9 @@ export const deleteRow = async (rowIndex) => {
 
   // Use the Google Sheets API v4 batchUpdate to delete a row
   try {
+    // Track write request
+    writeRequestCount++;
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
       {

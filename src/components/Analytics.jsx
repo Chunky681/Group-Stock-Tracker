@@ -1334,6 +1334,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
           });
           
           // Convert to array format, summing last values per user for each hour
+          const now = new Date();
           result = Array.from(hourUserMap.entries())
             .map(([hourTimestamp, userMap]) => {
               // Sum the last value for each user at this hour
@@ -1353,26 +1354,47 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                 timestamp: dateObj.getTime(),
               };
             })
+            .filter(point => {
+              // Filter out any points beyond the current time for 1D view
+              return point.timestamp <= now.getTime();
+            })
             .sort((a, b) => a.dateObj - b.dateObj);
           
           // Always add today's current value as the final point
-          const now = new Date();
+          // Show both the hour point (e.g., 7:00 PM) and the current time point (e.g., 7:52 PM) if they differ
           const lastHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
           const lastPointTime = result.length > 0 ? result[result.length - 1].dateObj : null;
+          const lastPointHour = lastPointTime ? new Date(lastPointTime.getFullYear(), lastPointTime.getMonth(), lastPointTime.getDate(), lastPointTime.getHours(), 0, 0, 0) : null;
+          const isCurrentHour = lastPointHour && lastPointHour.getTime() === lastHour.getTime();
+          const isExactlyHour = lastPointTime && lastPointTime.getTime() === lastHour.getTime();
+          const nowIsAfterHour = now.getTime() > lastHour.getTime();
+          const hasMinutes = now.getMinutes() > 0 || now.getSeconds() > 0;
           
-          // Check if we need to update or add the current value point
-          if (lastPointTime && lastPointTime.getTime() === lastHour.getTime()) {
-            // Update the last point with current value
-            result[result.length - 1].value = currentTotalValue || 0;
-            result[result.length - 1].timestamp = lastHour.getTime();
-          } else {
-            // Add current value as new point
+          // If we have a point at exactly the hour start (7:00 PM) and current time is later in that hour (7:52 PM),
+          // add a separate point for the current time so both points show
+          if (isExactlyHour && nowIsAfterHour && hasMinutes) {
+            // Keep the hour point (already exists) and add current time point
             result.push({
-              date: formatDateForChart(lastHour, timePeriod),
+              date: formatDateForChart(now, timePeriod),
               value: currentTotalValue || 0,
               fullDate: todayDateStr,
-              dateObj: lastHour,
-              timestamp: lastHour.getTime(),
+              dateObj: new Date(now),
+              timestamp: now.getTime(),
+            });
+          } else if (isCurrentHour && !isExactlyHour) {
+            // Update the last point if it's from current hour but not exactly at hour start
+            result[result.length - 1].value = currentTotalValue || 0;
+            result[result.length - 1].timestamp = now.getTime();
+            result[result.length - 1].dateObj = new Date(now);
+            result[result.length - 1].date = formatDateForChart(now, timePeriod);
+          } else if (!isCurrentHour || !lastPointTime) {
+            // Add new point if no point exists for current hour
+            result.push({
+              date: formatDateForChart(now, timePeriod),
+              value: currentTotalValue || 0,
+              fullDate: todayDateStr,
+              dateObj: new Date(now),
+              timestamp: now.getTime(),
             });
           }
         } else if (timePeriod === '1W') {
@@ -1601,6 +1623,19 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
   const yAxisMin = Math.max(0, minValue - padding); // Don't go below 0
   const yAxisMax = maxValue + padding;
   
+  // Calculate custom ticks for 1D period to show every other hour (odd hours only: 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23)
+  const xAxisTicks = timePeriod === '1D' && chartData.length > 0 ? (() => {
+    // Filter data timestamps to only include odd hours (1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23)
+    return chartData
+      .map(d => {
+        const date = new Date(d.timestamp);
+        return { timestamp: d.timestamp, hour: date.getHours() };
+      })
+      .filter(item => item.hour % 2 === 1) // Only odd hours
+      .map(item => item.timestamp)
+      .sort((a, b) => a - b);
+  })() : undefined;
+  
   return (
     <div className="space-y-4">
       {/* Summary Stats */}
@@ -1641,6 +1676,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               stroke="#94a3b8"
               tick={{ fill: '#94a3b8', fontSize: 12 }}
               axisLine={{ stroke: '#475569' }}
+              ticks={xAxisTicks}
               tickFormatter={(value) => {
                 const date = new Date(value);
                 return formatDateForChart(date, timePeriod);
