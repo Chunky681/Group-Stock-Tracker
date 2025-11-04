@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
-import { readSheetData, initializeSheet } from '../utils/googleSheets';
+import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
 const COLORS = [
@@ -26,6 +26,7 @@ const Analytics = ({ refreshKey }) => {
   const [historyData, setHistoryData] = useState([]);
   const [holdingsHistory, setHoldingsHistory] = useState([]);
   const [timePeriod, setTimePeriod] = useState('ALL'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
+  const [postingUser, setPostingUser] = useState('');
 
   useEffect(() => {
     loadPortfolio();
@@ -33,10 +34,10 @@ const Analytics = ({ refreshKey }) => {
     loadHoldingsHistory();
   }, [refreshKey]);
 
-  // Load holdings history from HoldingsHistory sheet
+  // Load holdings history from HoldingsHistory sheet (including chat data from column E)
   const loadHoldingsHistory = async () => {
     try {
-      const data = await readSheetData('HoldingsHistory!A1:D10000');
+      const data = await readSheetData('HoldingsHistory!A1:E10000');
       
       if (!data || data.length === 0) {
         setHoldingsHistory([]);
@@ -51,6 +52,7 @@ const Analytics = ({ refreshKey }) => {
         const username = row[1]?.trim() || '';
         const ticker = row[2]?.trim().toUpperCase() || '';
         const shares = parseFloat(row[3]) || 0;
+        const chats = row[4]?.trim() || ''; // Column E: ChatsOnDay
         
         // Parse date
         let date;
@@ -77,6 +79,7 @@ const Analytics = ({ refreshKey }) => {
           username,
           ticker,
           shares,
+          chats,
         };
       }).filter(Boolean);
       
@@ -254,10 +257,13 @@ const Analytics = ({ refreshKey }) => {
     return portfolio.filter(item => selectedUsers.has(item.username));
   }, [portfolio, selectedUsers]);
 
-  // Get all unique users
+  // Get all unique users from both portfolio and holdings history
   const allUsers = useMemo(() => {
-    return [...new Set(portfolio.map(item => item.username).filter(Boolean))].sort();
-  }, [portfolio]);
+    const portfolioUsers = portfolio.map(item => item.username).filter(Boolean);
+    const historyUsers = holdingsHistory.map(item => item.username).filter(Boolean);
+    const allUniqueUsers = [...new Set([...portfolioUsers, ...historyUsers])];
+    return allUniqueUsers.sort();
+  }, [portfolio, holdingsHistory]);
 
   // Toggle user selection
   const toggleUser = (username) => {
@@ -367,6 +373,31 @@ const Analytics = ({ refreshKey }) => {
         value: Number(value.toFixed(2)),
       }))
       .sort((a, b) => b.value - a.value);
+  };
+
+  // Get all chat messages from all records for a username and ticker combination
+  const getChatsForTicker = (ticker, username) => {
+    if (!ticker || !username || holdingsHistory.length === 0) {
+      return '';
+    }
+    
+    // Collect all chat messages from all records matching this username and ticker
+    const allChats = [];
+    
+    holdingsHistory
+      .filter(item => item.ticker === ticker.toUpperCase() && item.username === username.trim())
+      .forEach(item => {
+        if (item.chats && item.chats.trim()) {
+          // Split by newline to get individual chat messages
+          const chatLines = item.chats.split('\n').filter(line => line.trim());
+          allChats.push(...chatLines);
+        }
+      });
+    
+    // Remove duplicates (in case the same chat appears in multiple records)
+    // and return as newline-separated string
+    const uniqueChats = [...new Set(allChats)];
+    return uniqueChats.join('\n');
   };
 
   // Calculate stock gains over the past 30 days for a specific ticker
@@ -927,7 +958,23 @@ const Analytics = ({ refreshKey }) => {
                               <Trophy className="w-5 h-5 text-yellow-500" />
                               Position Changes (Past 30 days)
                             </h5>
-                            <StockGainsLeaderboard ticker={stock.ticker} gains={getStockGains(stock.ticker)} />
+                            <StockGainsLeaderboard 
+                              ticker={stock.ticker} 
+                              gains={getStockGains(stock.ticker)} 
+                              getChatsForUserAndTicker={getChatsForTicker}
+                              allUsers={allUsers}
+                              postingUser={postingUser}
+                              setPostingUser={setPostingUser}
+                              onChatSubmit={async (ticker, message, postingUser, positionUsername) => {
+                                try {
+                                  await updateHoldingsHistoryChat(ticker, message, postingUser, positionUsername);
+                                  loadHoldingsHistory(); // Refresh to show new chat
+                                } catch (error) {
+                                  console.error('Error submitting chat:', error);
+                                  alert(`Failed to submit chat: ${error.message}`);
+                                }
+                              }}
+                            />
                           </div>
                         </div>
                       )}
@@ -1185,7 +1232,23 @@ const Analytics = ({ refreshKey }) => {
                           <Trophy className="w-5 h-5 text-yellow-500" />
                           Position Changes (Past 30 days)
                         </h5>
-                        <StockGainsLeaderboard ticker={stock.ticker} gains={getStockGains(stock.ticker)} />
+                        <StockGainsLeaderboard 
+                          ticker={stock.ticker} 
+                          gains={getStockGains(stock.ticker)} 
+                          getChatsForUserAndTicker={getChatsForTicker}
+                          allUsers={allUsers}
+                          postingUser={postingUser}
+                          setPostingUser={setPostingUser}
+                          onChatSubmit={async (ticker, message, postingUser, positionUsername) => {
+                            try {
+                              await updateHoldingsHistoryChat(ticker, message, postingUser, positionUsername);
+                              loadHoldingsHistory(); // Refresh to show new chat
+                            } catch (error) {
+                              console.error('Error submitting chat:', error);
+                              alert(`Failed to submit chat: ${error.message}`);
+                            }
+                          }}
+                        />
                       </div>
                     </div>
                   )}
@@ -1755,7 +1818,58 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
 };
 
 // Stock Gains Leaderboard Component
-const StockGainsLeaderboard = ({ ticker, gains }) => {
+const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUsers = [], onChatSubmit, postingUser, setPostingUser }) => {
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [chatMessage, setChatMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Get chats for the selected entry
+  const chats = useMemo(() => {
+    if (!selectedEntry || !getChatsForUserAndTicker) return '';
+    return getChatsForUserAndTicker(ticker, selectedEntry.username);
+  }, [selectedEntry, ticker, getChatsForUserAndTicker]);
+
+  // Parse chat messages from the string (newline-separated)
+  const parsedChats = useMemo(() => {
+    if (!chats || !chats.trim()) return [];
+    
+    return chats.split('\n').filter(line => line.trim()).map(line => {
+      // Parse format: "Username: Message (timestamp)"
+      const match = line.match(/^(.+?):\s*(.+?)\s*\((.+?)\)$/);
+      if (match) {
+        return {
+          username: match[1].trim(),
+          message: match[2].trim(),
+          timestamp: match[3].trim(),
+        };
+      }
+      // Fallback: if format doesn't match, return as-is
+      return {
+        username: 'Unknown',
+        message: line.trim(),
+        timestamp: '',
+      };
+    });
+  }, [chats]);
+
+  const handleChatSubmit = async (e) => {
+    e.preventDefault();
+    if (!chatMessage.trim() || !postingUser.trim() || !selectedEntry || !onChatSubmit) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onChatSubmit(ticker, chatMessage.trim(), postingUser.trim(), selectedEntry.username);
+      setChatMessage('');
+      setSelectedEntry(null);
+    } catch (error) {
+      console.error('Error submitting chat:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!gains || gains.length === 0) {
     return (
       <div className="p-4 bg-slate-800/50 rounded-lg border border-slate-700">
@@ -1776,73 +1890,160 @@ const StockGainsLeaderboard = ({ ticker, gains }) => {
   const isCash = ticker === 'CASH' || ticker === 'USD';
 
   return (
-    <div 
-      className={`space-y-2 ${topGainers.length > visibleItems ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800' : ''}`}
-      style={topGainers.length > visibleItems ? { maxHeight: `${maxHeight}px` } : {}}
-    >
-      {topGainers.map((entry, index) => {
-        const isPositive = entry.gain > 0;
-        const isNegative = entry.gain < 0;
-        
-        return (
-          <motion.div
-            key={`${entry.username}-${ticker}`}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.05 }}
-            className={`p-3 rounded-lg border ${
-              index === 0 && isPositive
-                ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 border-yellow-500/50'
-                : isPositive
-                ? 'bg-slate-800/50 border-green-500/30'
-                : isNegative
-                ? 'bg-slate-800/50 border-red-500/30'
-                : 'bg-slate-800/50 border-slate-700'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                  index === 0 && isPositive
-                    ? 'bg-yellow-500/30 text-yellow-400'
-                    : index === 1 && isPositive
-                    ? 'bg-slate-600 text-slate-300'
-                    : index === 2 && isPositive
-                    ? 'bg-amber-600/30 text-amber-400'
-                    : 'bg-slate-700 text-slate-400'
-                }`}>
-                  {index + 1}
+    <div className="space-y-4">
+      {/* Leaderboard */}
+      <div 
+        className={`space-y-2 ${topGainers.length > visibleItems ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800' : ''}`}
+        style={topGainers.length > visibleItems ? { maxHeight: `${maxHeight}px` } : {}}
+      >
+        {topGainers.map((entry, index) => {
+          const isPositive = entry.gain > 0;
+          const isNegative = entry.gain < 0;
+          const isSelected = selectedEntry?.username === entry.username;
+          
+          return (
+            <motion.div
+              key={`${entry.username}-${ticker}`}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.05 }}
+              className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                isSelected
+                  ? 'bg-primary-500/20 border-primary-500/50'
+                  : index === 0 && isPositive
+                  ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-500/10 border-yellow-500/50'
+                  : isPositive
+                  ? 'bg-slate-800/50 border-green-500/30'
+                  : isNegative
+                  ? 'bg-slate-800/50 border-red-500/30'
+                  : 'bg-slate-800/50 border-slate-700'
+              } hover:border-primary-500/50`}
+              onClick={() => {
+                setSelectedEntry(entry);
+                if (!postingUser && allUsers.length > 0 && setPostingUser) {
+                  setPostingUser(allUsers[0]);
+                }
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                    index === 0 && isPositive
+                      ? 'bg-yellow-500/30 text-yellow-400'
+                      : index === 1 && isPositive
+                      ? 'bg-slate-600 text-slate-300'
+                      : index === 2 && isPositive
+                      ? 'bg-amber-600/30 text-amber-400'
+                      : 'bg-slate-700 text-slate-400'
+                  }`}>
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white">{entry.username}</p>
+                    <p className="text-xs text-slate-400">
+                      {isCash 
+                        ? `$${entry.oldShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → $${entry.currentShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : `${entry.oldShares.toFixed(2)} → ${entry.currentShares.toFixed(2)} shares`}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold text-white">{entry.username}</p>
-                  <p className="text-xs text-slate-400">
-                    {isCash 
-                      ? `$${entry.oldShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → $${entry.currentShares.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : `${entry.oldShares.toFixed(2)} → ${entry.currentShares.toFixed(2)} shares`}
-                  </p>
+                <div className="text-right">
+                  <div className={`flex items-center gap-1 font-bold ${
+                    isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-400'
+                  }`}>
+                    {isPositive ? (
+                      <TrendingUp className="w-4 h-4" />
+                    ) : isNegative ? (
+                      <TrendingDown className="w-4 h-4" />
+                    ) : null}
+                    <span>
+                      {isCash 
+                        ? `${entry.gain >= 0 ? '+' : ''}$${Math.abs(entry.gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : `${entry.gain > 0 ? '+' : ''}${entry.gain.toFixed(2)}`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">{isCash ? 'USD' : 'shares'}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <div className={`flex items-center gap-1 font-bold ${
-                  isPositive ? 'text-green-400' : isNegative ? 'text-red-400' : 'text-slate-400'
-                }`}>
-                  {isPositive ? (
-                    <TrendingUp className="w-4 h-4" />
-                  ) : isNegative ? (
-                    <TrendingDown className="w-4 h-4" />
-                  ) : null}
-                  <span>
-                    {isCash 
-                      ? `${entry.gain >= 0 ? '+' : ''}$${Math.abs(entry.gain).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : `${entry.gain > 0 ? '+' : ''}${entry.gain.toFixed(2)}`}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">{isCash ? 'USD' : 'shares'}</p>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Chat Section */}
+      {selectedEntry && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 bg-slate-800/50 rounded-lg border border-slate-700"
+        >
+          <div className="mb-3">
+            <p className="text-sm text-slate-400 mb-1">Chat for {selectedEntry.username}'s position</p>
+            
+            {/* Existing Chat Messages */}
+            {parsedChats.length > 0 && (
+              <div className="mb-3 max-h-32 overflow-y-auto space-y-2">
+                {parsedChats.map((chat, idx) => (
+                  <div key={idx} className="text-xs bg-slate-900/50 p-2 rounded border border-slate-700">
+                    <span className="font-semibold text-primary-400">{chat.username}:</span>
+                    <span className="text-slate-300 ml-1">{chat.message}</span>
+                    {chat.timestamp && (
+                      <span className="text-slate-500 ml-1">({chat.timestamp})</span>
+                    )}
+                  </div>
+                ))}
               </div>
+            )}
+          </div>
+
+          {/* Chat Input Form */}
+          <form onSubmit={handleChatSubmit} className="space-y-2">
+            <div className="flex gap-2">
+              <select
+                value={postingUser}
+                onChange={(e) => setPostingUser(e.target.value)}
+                className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-sm text-white"
+                required
+              >
+                <option value="">Select user...</option>
+                {allUsers.map(user => (
+                  <option key={user} value={user}>{user}</option>
+                ))}
+              </select>
             </div>
-          </motion.div>
-        );
-      })}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                placeholder="Enter your message..."
+                className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-sm text-white placeholder-slate-500"
+                required
+                disabled={isSubmitting}
+              />
+              <motion.button
+                type="submit"
+                disabled={isSubmitting || !chatMessage.trim() || !postingUser}
+                className="px-4 py-2 bg-primary-500 text-white rounded text-sm font-semibold hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                whileHover={{ scale: isSubmitting ? 1 : 1.05 }}
+                whileTap={{ scale: isSubmitting ? 1 : 0.95 }}
+              >
+                {isSubmitting ? 'Sending...' : 'Send'}
+              </motion.button>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedEntry(null);
+                setChatMessage('');
+              }}
+              className="text-xs text-slate-400 hover:text-slate-300"
+            >
+              Cancel
+            </button>
+          </form>
+        </motion.div>
+      )}
     </div>
   );
 };
