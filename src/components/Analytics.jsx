@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell, Coins, Building2, ArrowUp } from 'lucide-react';
+import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell, Coins, Building2, ArrowUp, ArrowDown } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
@@ -9,13 +9,27 @@ const COLORS = [
   '#0ea5e9', // primary-500
   '#10b981', // green
   '#f59e0b', // amber
-  '#ef4444', // red
+  '#CC7722', // ochre (was red)
   '#8b5cf6', // violet
   '#ec4899', // pink
   '#14b8a6', // teal
   '#f97316', // orange
   '#6366f1', // indigo
   '#06b6d4', // cyan
+];
+
+// Colors for other stocks (excluding green, ochre, and orange which are reserved for CASH and REAL ESTATE)
+const STOCK_COLORS = [
+  '#0ea5e9', // primary-500 (blue)
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#6366f1', // indigo
+  '#06b6d4', // cyan
+  '#f59e0b', // amber (yellow-gold)
+  '#a855f7', // purple
+  '#3b82f6', // blue
+  '#ef4444', // red
 ];
 
 // Cash Particles Animation Component
@@ -117,7 +131,7 @@ const RealEstateAnimation = ({ trigger }) => {
               bottom: '20%',
             }}
           >
-            <Home className="w-6 h-6 text-red-400 drop-shadow-lg" />
+            <Home className="w-6 h-6 text-amber-600 drop-shadow-lg" style={{ color: '#CC7722' }} />
           </motion.div>
         );
       })}
@@ -126,27 +140,30 @@ const RealEstateAnimation = ({ trigger }) => {
 };
 
 // Chart Arrow Animation Component
-const ChartArrowAnimation = ({ trigger }) => {
+const ChartArrowAnimation = ({ trigger, changePercent = 0 }) => {
   const arrows = Array.from({ length: 5 }, (_, i) => i);
+  const isPositive = changePercent >= 0;
+  const arrowColor = isPositive ? '#22c55e' : '#ef4444'; // green for up/flat, red for down
+  const ArrowComponent = isPositive ? ArrowUp : ArrowDown;
   
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
       <AnimatePresence>
         {trigger && arrows.map((i) => {
           const x = 20 + (i * 15);
-          const y = 80 - (i * 10);
+          const y = isPositive ? 80 - (i * 10) : 20 + (i * 10); // Start from top for down arrows, bottom for up arrows
           
           return (
             <motion.div
               key={`arrow-${i}-${trigger}`}
               initial={{ 
                 opacity: 0,
-                y: 100,
+                y: isPositive ? 100 : -20, // Start from bottom for up arrows, top for down arrows
                 x: x,
               }}
               animate={{
                 opacity: [0, 1, 1, 0],
-                y: [100, y, y, 50],
+                y: isPositive ? [100, y, y, 50] : [-20, y, y, 80], // Move up for positive, down for negative
                 scale: [0.8, 1, 1, 0.8],
               }}
               exit={{ opacity: 0 }}
@@ -158,7 +175,7 @@ const ChartArrowAnimation = ({ trigger }) => {
               className="absolute"
               style={{ left: `${x}%` }}
             >
-              <ArrowUp className="w-5 h-5 text-primary-400" />
+              <ArrowComponent className="w-5 h-5" style={{ color: arrowColor }} />
             </motion.div>
           );
         })}
@@ -540,7 +557,16 @@ const Analytics = ({ refreshKey }) => {
         name: ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker === 'REAL ESTATE' ? 'REAL ESTATE' : ticker,
         value: Number(value.toFixed(2)),
       }))
-      .sort((a, b) => b.value - a.value);
+      .sort((a, b) => {
+        // CASH always first
+        if (a.name === 'CASH') return -1;
+        if (b.name === 'CASH') return 1;
+        // REAL ESTATE always second
+        if (a.name === 'REAL ESTATE') return -1;
+        if (b.name === 'REAL ESTATE') return 1;
+        // Everything else sorted by value (descending)
+        return b.value - a.value;
+      });
   }, [filteredPortfolio]);
 
   // Data for pie chart by stock (for each stock, show user distribution)
@@ -1035,9 +1061,22 @@ const Analytics = ({ refreshKey }) => {
                         dataKey="value"
                       >
                         {totalValueByStock.map((entry, index) => {
-                          // Always use green for Cash
+                          // Always use green for Cash, ochre for Real Estate
                           const isCash = entry.name === 'CASH';
-                          const fillColor = isCash ? '#22c55e' : COLORS[index % COLORS.length];
+                          const isRealEstate = entry.name === 'REAL ESTATE';
+                          let fillColor;
+                          if (isCash) {
+                            fillColor = '#22c55e'; // green
+                          } else if (isRealEstate) {
+                            fillColor = '#CC7722'; // ochre
+                          } else {
+                            // For other stocks, use STOCK_COLORS (excluding green, ochre, and orange)
+                            // Calculate index excluding CASH and REAL ESTATE
+                            const otherStocksIndex = totalValueByStock
+                              .slice(0, index)
+                              .filter(e => e.name !== 'CASH' && e.name !== 'REAL ESTATE').length;
+                            fillColor = STOCK_COLORS[otherStocksIndex % STOCK_COLORS.length];
+                          }
                           return (
                             <Cell key={`stock-cell-${index}`} fill={fillColor} stroke="none" />
                           );
@@ -1050,16 +1089,29 @@ const Analytics = ({ refreshKey }) => {
                 <div className="flex-grow pt-1">
                   <div className="flex flex-wrap justify-center gap-4">
                     {totalValueByStock.map((entry, index) => {
-                      // Always use green for Cash
+                      // Always use green for Cash, ochre for Real Estate
                       const isCash = entry.name === 'CASH';
-                      const color = isCash ? '#22c55e' : COLORS[index % COLORS.length];
+                      const isRealEstate = entry.name === 'REAL ESTATE';
+                      let color;
+                      if (isCash) {
+                        color = '#22c55e'; // green
+                      } else if (isRealEstate) {
+                        color = '#CC7722'; // ochre
+                      } else {
+                        // For other stocks, use STOCK_COLORS (excluding green, ochre, and orange)
+                        // Calculate index excluding CASH and REAL ESTATE
+                        const otherStocksIndex = totalValueByStock
+                          .slice(0, index)
+                          .filter(e => e.name !== 'CASH' && e.name !== 'REAL ESTATE').length;
+                        color = STOCK_COLORS[otherStocksIndex % STOCK_COLORS.length];
+                      }
                       return (
                         <div key={`legend-${index}`} className="flex items-center gap-2">
                           <div 
                             className="w-3 h-3 rounded-full" 
                             style={{ backgroundColor: color }}
                           />
-                          <span className={`text-sm ${isCash ? 'text-green-400' : 'text-slate-300'}`}>{entry.name}</span>
+                          <span className={`text-sm ${isCash ? 'text-green-400' : isRealEstate ? 'text-amber-600' : 'text-slate-300'}`} style={isRealEstate ? { color: '#CC7722' } : {}}>{entry.name}</span>
                         </div>
                       );
                     })}
@@ -1240,12 +1292,12 @@ const Analytics = ({ refreshKey }) => {
                         className="flex items-center gap-3 cursor-pointer hover:bg-slate-800/50 p-2 rounded-lg transition-colors"
                         onClick={() => toggleHolding(stock.ticker)}
                       >
-                        <div className="p-3 bg-red-500/20 rounded-lg">
-                          <Home className="w-6 h-6 text-red-400" />
+                        <div className="p-3 bg-amber-600/20 rounded-lg" style={{ backgroundColor: 'rgba(204, 119, 34, 0.2)' }}>
+                          <Home className="w-6 h-6 text-amber-600" style={{ color: '#CC7722' }} />
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h4 className="text-3xl font-bold text-red-400 mb-1">REAL ESTATE</h4>
+                            <h4 className="text-3xl font-bold text-amber-600 mb-1" style={{ color: '#CC7722' }}>REAL ESTATE</h4>
                             {isExpanded ? (
                               <ChevronUp className="w-5 h-5 text-slate-400" />
                             ) : (
@@ -1302,9 +1354,9 @@ const Analytics = ({ refreshKey }) => {
                                     dataKey="value"
                                   >
                                     {distribution.map((entry, index) => {
-                                      // Always use red for Real Estate
+                                      // Always use ochre for Real Estate
                                       const isRealEstate = entry.name === 'REAL ESTATE';
-                                      const fillColor = isRealEstate ? '#ef4444' : COLORS[index % COLORS.length];
+                                      const fillColor = isRealEstate ? '#CC7722' : COLORS[index % COLORS.length];
                                       return (
                                         <Cell key={`cell-${index}`} fill={fillColor} stroke="none" />
                                       );
@@ -1317,16 +1369,16 @@ const Analytics = ({ refreshKey }) => {
                             <div className="flex-grow pt-1">
                               <div className="flex flex-wrap justify-center gap-4">
                                 {distribution.map((entry, index) => {
-                                  // Always use red for Real Estate
+                                  // Always use ochre for Real Estate
                                   const isRealEstate = entry.name === 'REAL ESTATE';
-                                  const color = isRealEstate ? '#ef4444' : COLORS[index % COLORS.length];
+                                  const color = isRealEstate ? '#CC7722' : COLORS[index % COLORS.length];
                                   return (
                                     <div key={`legend-${index}`} className="flex items-center gap-2">
                                       <div 
                                         className="w-3 h-3 rounded-full" 
                                         style={{ backgroundColor: color }}
                                       />
-                                      <span className={`text-sm ${isRealEstate ? 'text-red-400' : 'text-slate-300'}`}>{entry.name}</span>
+                                      <span className={`text-sm ${isRealEstate ? 'text-amber-600' : 'text-slate-300'}`} style={isRealEstate ? { color: '#CC7722' } : {}}>{entry.name}</span>
                                     </div>
                                   );
                                 })}
@@ -1400,14 +1452,12 @@ const Analytics = ({ refreshKey }) => {
                         <div className="text-2xl font-bold text-white">
                           ${stock.price.toFixed(2)}
                         </div>
-                        {stock.fullQuote?.changeDollar !== undefined && (
-                          <div className={`text-lg font-semibold ${
-                            (stock.fullQuote.changeDollar || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                        {stock.fullQuote?.changePercent !== undefined && (
+                          <div className={`text-sm font-semibold ${
+                            (stock.fullQuote.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
                           }`}>
-                            {(stock.fullQuote.changeDollar || 0) >= 0 ? '+' : ''}
-                            ${(stock.fullQuote.changeDollar || 0).toFixed(2)} (
                             {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
-                            {(stock.fullQuote.changePercent || 0).toFixed(2)}%)
+                            {(stock.fullQuote.changePercent || 0).toFixed(2)}%
                           </div>
                         )}
                         {!isExpanded && (
@@ -1428,7 +1478,10 @@ const Analytics = ({ refreshKey }) => {
                       <>
                         <div className="relative">
                           {/* Chart Arrow Animation */}
-                          <ChartArrowAnimation trigger={animationTrigger[stock.ticker]} />
+                          <ChartArrowAnimation 
+                            trigger={animationTrigger[stock.ticker]} 
+                            changePercent={stock.fullQuote?.changePercent || 0}
+                          />
                           
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
                       <div>
@@ -1557,6 +1610,17 @@ const Analytics = ({ refreshKey }) => {
                                   : stock.fullQuote.marketCap >= 1000000
                                   ? `$${(stock.fullQuote.marketCap / 1000000).toFixed(2)}M`
                                   : `$${stock.fullQuote.marketCap.toLocaleString()}`}
+                              </p>
+                            </div>
+                          )}
+                          {stock.fullQuote?.changePercent !== undefined && (
+                            <div className="p-2 bg-slate-800/50 rounded">
+                              <p className="text-xs text-slate-400 mb-1">Change %</p>
+                              <p className={`text-sm font-bold ${
+                                (stock.fullQuote.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                              }`}>
+                                {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
+                                {(stock.fullQuote.changePercent || 0).toFixed(2)}%
                               </p>
                             </div>
                           )}
@@ -2476,11 +2540,10 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
                 if (isSelected) {
                   setSelectedEntry(null);
                   setChatMessage(''); // Clear message when closing
+                  setPostingUser(''); // Clear posting user when closing
                 } else {
                   setSelectedEntry(entry);
-                  if (!postingUser && allUsers.length > 0 && setPostingUser) {
-                    setPostingUser(allUsers[0]);
-                  }
+                  // Don't auto-fill postingUser - let user type their own name
                 }
               }}
             >
@@ -2618,17 +2681,15 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
           {/* Chat Input Form */}
           <form onSubmit={handleChatSubmit} className="space-y-2">
             <div className="flex gap-2">
-              <select
+              <input
+                type="text"
                 value={postingUser}
                 onChange={(e) => setPostingUser(e.target.value)}
-                className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-sm text-white"
+                placeholder="Enter your name..."
+                className="flex-1 px-3 py-2 bg-slate-900 border border-slate-600 rounded text-sm text-white placeholder-slate-500"
                 required
-              >
-                <option value="">Select user...</option>
-                {allUsers.map(user => (
-                  <option key={user} value={user}>{user}</option>
-                ))}
-              </select>
+                disabled={isSubmitting}
+              />
             </div>
             <div className="flex gap-2">
               <input
@@ -2642,7 +2703,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
               />
               <motion.button
                 type="submit"
-                disabled={isSubmitting || !chatMessage.trim() || !postingUser}
+                disabled={isSubmitting || !chatMessage.trim() || !postingUser.trim()}
                 className="px-4 py-2 bg-primary-500 text-white rounded text-sm font-semibold hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 whileHover={{ scale: isSubmitting ? 1 : 1.05 }}
                 whileTap={{ scale: isSubmitting ? 1 : 0.95 }}
@@ -2655,6 +2716,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
               onClick={() => {
                 setSelectedEntry(null);
                 setChatMessage('');
+                setPostingUser('');
               }}
               className="text-xs text-slate-400 hover:text-slate-300"
             >

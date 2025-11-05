@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, User, Search, BarChart3, DollarSign, Home } from 'lucide-react';
 import StockSearch from './components/StockSearch';
@@ -16,9 +16,19 @@ function App() {
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' or 'stocks'
   const [portfolioKey, setPortfolioKey] = useState(0);
   const [addType, setAddType] = useState('stock'); // 'stock', 'cash', or 'realestate'
+  
+  // Refs for scrolling to form components
+  const stockFormRef = useRef(null);
+  const cashFormRef = useRef(null);
+  const realEstateFormRef = useRef(null);
 
   const handleStockSelected = (stockData) => {
     setSelectedStock(stockData);
+    // Scroll to the stock form after a short delay to ensure DOM is updated
+    // Use 'end' to show the bottom of the component (where the form is)
+    setTimeout(() => {
+      stockFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 200);
   };
 
   const handleStockAdded = () => {
@@ -30,6 +40,23 @@ function App() {
   const handleUserSelect = (username) => {
     setSelectedUser(username);
   };
+
+  // Scroll to form when tab changes
+  useEffect(() => {
+    if (addType === 'stock' && stockFormRef.current) {
+      setTimeout(() => {
+        stockFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    } else if (addType === 'cash' && cashFormRef.current) {
+      setTimeout(() => {
+        cashFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    } else if (addType === 'realestate' && realEstateFormRef.current) {
+      setTimeout(() => {
+        realEstateFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [addType]);
 
   return (
     <div className="min-h-screen">
@@ -190,7 +217,7 @@ function App() {
                                 </>
                               ) : (
                                 <>
-                                  <Home className="w-5 h-5 text-red-500" />
+                                  <Home className="w-5 h-5" style={{ color: '#CC7722' }} />
                                   Add Real Estate Holdings
                                 </>
                               )}
@@ -232,9 +259,10 @@ function App() {
                                 }}
                                 className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                                   addType === 'realestate'
-                                    ? 'bg-red-500 text-white'
+                                    ? 'text-white'
                                     : 'text-slate-400 hover:text-slate-300'
                                 }`}
+                                style={addType === 'realestate' ? { backgroundColor: '#CC7722' } : {}}
                               >
                                 Real Estate
                               </button>
@@ -242,7 +270,7 @@ function App() {
                           </div>
                           
                           {addType === 'stock' ? (
-                            <>
+                            <div ref={stockFormRef}>
                               <StockSearch onStockSelected={handleStockSelected} />
                               <AddStockForm 
                                 stockData={selectedStock} 
@@ -250,19 +278,23 @@ function App() {
                                 onSuccess={handleStockAdded}
                                 refreshKey={portfolioKey}
                               />
-                            </>
+                            </div>
                           ) : addType === 'cash' ? (
-                            <AddCashForm
-                              selectedUser={selectedUser}
-                              onSuccess={handleStockAdded}
-                              refreshKey={portfolioKey}
-                            />
+                            <div ref={cashFormRef}>
+                              <AddCashForm
+                                selectedUser={selectedUser}
+                                onSuccess={handleStockAdded}
+                                refreshKey={portfolioKey}
+                              />
+                            </div>
                           ) : (
-                            <AddRealEstateForm
-                              selectedUser={selectedUser}
-                              onSuccess={handleStockAdded}
-                              refreshKey={portfolioKey}
-                            />
+                            <div ref={realEstateFormRef}>
+                              <AddRealEstateForm
+                                selectedUser={selectedUser}
+                                onSuccess={handleStockAdded}
+                                refreshKey={portfolioKey}
+                              />
+                            </div>
                           )}
                         </div>
                       </motion.div>

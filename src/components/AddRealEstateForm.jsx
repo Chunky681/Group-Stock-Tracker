@@ -135,7 +135,7 @@ const AddRealEstateForm = ({ selectedUser, onSuccess, refreshKey }) => {
           animate={{ scale: 1, rotate: 0 }}
           transition={{ delay: 0.15, type: 'spring', stiffness: 200 }}
         >
-          <Home className="w-5 h-5 text-red-500" />
+          <Home className="w-5 h-5" style={{ color: '#CC7722' }} />
         </motion.div>
         <h3 className="text-xl font-bold text-white">Add Real Estate Holdings</h3>
       </motion.div>

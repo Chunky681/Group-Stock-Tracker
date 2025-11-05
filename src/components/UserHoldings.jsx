@@ -414,9 +414,9 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                       <DollarSign className="w-5 h-5 text-green-500" />
                     )}
                     {holding.isRealEstate && (
-                      <Home className="w-5 h-5 text-red-500" />
+                      <Home className="w-5 h-5" style={{ color: '#CC7722' }} />
                     )}
-                    <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-red-500' : 'text-white'}`}>
+                    <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : 'text-white'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
                       {holding.isCash ? 'CASH' : holding.isRealEstate ? 'REAL ESTATE' : holding.ticker}
                     </h4>
                   </div>
