@@ -2132,6 +2132,19 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
       }
     }
     
+    // For 1D period, if no historical data exists, add current portfolio value as a single point
+    if (timePeriod === '1D' && result.length === 0 && currentTotalValue > 0) {
+      const todayDateObj = new Date();
+      const todayDateStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
+      result.push({
+        date: formatDateForChart(todayDateObj, timePeriod),
+        value: currentTotalValue,
+        fullDate: todayDateStr,
+        dateObj: todayDateObj,
+        timestamp: todayDateObj.getTime(),
+      });
+    }
+    
     return result;
   }, [historyData, selectedUsers, timePeriod, currentTotalValue]);
   
