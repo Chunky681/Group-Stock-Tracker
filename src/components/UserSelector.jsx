@@ -306,7 +306,7 @@ const UserSelector = ({ selectedUser, onUserSelect, refreshKey, compact = false 
         )}
 
         {/* Users List */}
-        <div className={`space-y-3 ${compact ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto`}>
+        <div className={`space-y-3 ${compact ? 'max-h-[600px]' : 'max-h-96'} overflow-y-auto overflow-x-hidden`}>
           <AnimatePresence mode="wait">
             {filteredUsers.length === 0 ? (
               <motion.div

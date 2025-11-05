@@ -2508,7 +2508,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
     <div className="space-y-4">
       {/* Leaderboard */}
       <div 
-        className={`space-y-2 ${topGainers.length > visibleItems ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800' : ''}`}
+        className={`space-y-2 ${topGainers.length > visibleItems ? 'overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800' : ''}`}
         style={topGainers.length > visibleItems ? { maxHeight: `${maxHeight}px` } : {}}
       >
         {topGainers.map((entry, index) => {
@@ -2677,7 +2677,7 @@ const StockGainsLeaderboard = ({ ticker, gains, getChatsForUserAndTicker, allUse
             
             {/* Existing Chat Messages */}
             {parsedChats.length > 0 && (
-              <div ref={chatContainerRef} className="mb-3 max-h-32 overflow-y-auto space-y-2">
+              <div ref={chatContainerRef} className="mb-3 max-h-32 overflow-y-auto overflow-x-hidden space-y-2">
                 {parsedChats.map((chat, idx) => (
                   <div key={idx} className="text-xs bg-slate-900/50 p-2 rounded border border-slate-700">
                     <span className="font-semibold text-primary-400">{chat.username}:</span>
