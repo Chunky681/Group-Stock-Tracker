@@ -177,10 +177,12 @@ const StockSearch = ({ onStockSelected }) => {
         }, 500);
       } else {
         setError(result.message);
+        setCanAddTicker(false); // Hide the button so error can display
       }
     } catch (error) {
       console.error('Error adding new ticker:', error);
       setError(`Failed to add ticker: ${error.message}`);
+      setCanAddTicker(false); // Hide the button so error can display
     } finally {
       setIsAddingTicker(false);
     }
@@ -242,7 +244,7 @@ const StockSearch = ({ onStockSelected }) => {
 
         {/* Error Message */}
         <AnimatePresence>
-          {error && !canAddTicker && (
+          {error && !isAddingTicker && (
             <motion.div
               initial={{ opacity: 0, y: -10, height: 0 }}
               animate={{ opacity: 1, y: 0, height: 'auto' }}

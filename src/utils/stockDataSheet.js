@@ -193,7 +193,7 @@ export const clearStockDataCache = () => {
   cacheTimestamp = null;
 };
 
-// Add a new ticker to Sheet2 and validate that Name column populates
+// Add a new ticker to Sheet2 and validate that Currency column populates with USD
 // Returns { success: boolean, message: string, rowIndex?: number }
 export const addNewTickerToSheet2 = async (tickerSymbol) => {
   if (!tickerSymbol || !tickerSymbol.trim()) {
@@ -222,27 +222,26 @@ export const addNewTickerToSheet2 = async (tickerSymbol) => {
     const nextRowIndex = data.length + 1; // Next row after current data
 
     // Only write to columns A (empty) and B (Symbol) to preserve formulas in other columns
-    // This ensures formulas in columns C-Q (like Name) can populate automatically
+    // This ensures formulas in columns C-Q (like Currency) can populate automatically
     await appendRowToSheet2SymbolOnly(symbol);
     
-    // Wait for Google Sheets formulas to populate (Name column likely has a formula)
+    // Wait for Google Sheets formulas to populate (Currency column likely has a formula)
     // Wait 5 seconds to allow formulas to recalculate (based on observed timing for JPM and similar tickers)
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Refresh cache and check if Name column populated
+    // Refresh cache and check if Currency column populated with USD
     clearStockDataCache();
     const updatedData = await readSheetData('Sheet2!A1:Q1000');
     
     // Find the row we just added (should be the last row with our symbol)
     let addedRowIndex = -1;
-    let namePopulated = false;
+    let currencyValue = '';
     
     for (let i = updatedData.length - 1; i >= 1; i--) { // Start from bottom, skip header
       const row = updatedData[i];
       if (row && row.length > 1 && row[COLUMNS.SYMBOL]?.trim().toUpperCase() === symbol) {
         addedRowIndex = i + 1; // 1-based index for Google Sheets
-        const name = row[COLUMNS.NAME]?.trim() || '';
-        namePopulated = name.length > 0;
+        currencyValue = row[COLUMNS.CURRENCY]?.trim() || '';
         break;
       }
     }
@@ -254,25 +253,44 @@ export const addNewTickerToSheet2 = async (tickerSymbol) => {
       };
     }
 
-    if (!namePopulated) {
-      // Name column didn't populate, delete the row
+    // Check currency value and provide specific error messages
+    const currencyUpper = currencyValue.toUpperCase();
+    
+    if (currencyValue === '' || currencyValue === null || currencyValue === undefined) {
+      // Currency is blank - stock could not be tracked
       try {
         await deleteRowFromSheet2(addedRowIndex);
         clearStockDataCache();
         return { 
           success: false, 
-          message: `Ticker ${symbol} was added but Name column did not populate. The ticker may be invalid or unavailable. Row has been removed.` 
+          message: `Stock ${symbol} could not be tracked.` 
         };
       } catch (deleteError) {
         console.error('Error deleting invalid row:', deleteError);
         return { 
           success: false, 
-          message: `Ticker ${symbol} was added but Name column did not populate. Failed to remove invalid row: ${deleteError.message}` 
+          message: `Stock ${symbol} could not be tracked. Failed to remove invalid row: ${deleteError.message}` 
+        };
+      }
+    } else if (currencyUpper !== 'USD') {
+      // Currency is something other than USD - not listed on US exchange
+      try {
+        await deleteRowFromSheet2(addedRowIndex);
+        clearStockDataCache();
+        return { 
+          success: false, 
+          message: `Stock ${symbol} is not listed on a USA exchange.  Try looking up the full USA ticker and try again` 
+        };
+      } catch (deleteError) {
+        console.error('Error deleting invalid row:', deleteError);
+        return { 
+          success: false, 
+          message: `Stock ${symbol} is not listed on a USA exchange.  Try looking up the full USA ticker and try again. Failed to remove invalid row: ${deleteError.message}` 
         };
       }
     }
 
-    // Success! Name column populated
+    // Success! Currency column populated with USD
     clearStockDataCache();
     return { 
       success: true, 
