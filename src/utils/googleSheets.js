@@ -7,11 +7,24 @@ const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 let readRequestCount = 0;
 let writeRequestCount = 0;
 
+// Cache for sheet data to reduce API calls
+const sheetDataCache = new Map();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes cache for sheet data
+
 export const getReadRequestCount = () => readRequestCount;
 export const getWriteRequestCount = () => writeRequestCount;
 export const resetRequestCounts = () => {
   readRequestCount = 0;
   writeRequestCount = 0;
+};
+
+// Clear cache for a specific range or all caches
+export const clearSheetCache = (range = null) => {
+  if (range) {
+    sheetDataCache.delete(range);
+  } else {
+    sheetDataCache.clear();
+  }
 };
 
 // Helper function to format date for HoldingsHistory column A
@@ -54,22 +67,36 @@ const getSheetId = () => {
   return id.trim();
 };
 
-export const readSheetData = async (range = 'Sheet1!A1:D1000') => {
+export const readSheetData = async (range = 'Sheet1!A1:D1000', forceRefresh = false) => {
   const apiKey = getApiKey();
   const sheetId = getSheetId();
   
-  // Debug logging
-  console.log('Environment check:', {
-    hasApiKey: !!apiKey,
-    apiKeyLength: apiKey?.length || 0,
-    apiKeyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'none',
-    hasSheetId: !!sheetId,
-    sheetIdLength: sheetId?.length || 0,
-    rawEnv: {
-      VITE_GOOGLE_SHEETS_API_KEY: import.meta.env.VITE_GOOGLE_SHEETS_API_KEY ? 'set' : 'not set',
-      VITE_GOOGLE_SHEET_ID: import.meta.env.VITE_GOOGLE_SHEET_ID ? 'set' : 'not set'
+  // Check cache first
+  if (!forceRefresh) {
+    const cached = sheetDataCache.get(range);
+    if (cached && cached.timestamp) {
+      const now = Date.now();
+      if (now - cached.timestamp < CACHE_DURATION) {
+        console.log(`Using cached data for ${range}`);
+        return cached.data;
+      }
     }
-  });
+  }
+  
+  // Debug logging (only on first call or when cache misses)
+  if (forceRefresh || !sheetDataCache.has(range)) {
+    console.log('Environment check:', {
+      hasApiKey: !!apiKey,
+      apiKeyLength: apiKey?.length || 0,
+      apiKeyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'none',
+      hasSheetId: !!sheetId,
+      sheetIdLength: sheetId?.length || 0,
+      rawEnv: {
+        VITE_GOOGLE_SHEETS_API_KEY: import.meta.env.VITE_GOOGLE_SHEETS_API_KEY ? 'set' : 'not set',
+        VITE_GOOGLE_SHEET_ID: import.meta.env.VITE_GOOGLE_SHEET_ID ? 'set' : 'not set'
+      }
+    });
+  }
   
   if (!apiKey || !sheetId) {
     const missing = [];
@@ -94,7 +121,15 @@ export const readSheetData = async (range = 'Sheet1!A1:D1000') => {
       throw new Error(`Failed to read sheet: ${errorMsg}`);
     }
     
-    return data.values || [];
+    const values = data.values || [];
+    
+    // Cache the result
+    sheetDataCache.set(range, {
+      data: values,
+      timestamp: Date.now()
+    });
+    
+    return values;
   } catch (error) {
     console.error('Error reading sheet:', error);
     throw error;
@@ -145,6 +180,9 @@ export const appendRow = async (rowData) => {
       console.error('Google Sheets API error:', data);
       throw new Error(`Failed to append row: ${errorMsg}`);
     }
+    
+    // Clear cache for Sheet1 since we added a row
+    clearSheetCache('Sheet1!A1:D1000');
     
     return data;
   } catch (error) {
@@ -197,6 +235,9 @@ export const updateRow = async (rowIndex, rowData) => {
       console.error('Google Sheets API error:', data);
       throw new Error(`Failed to update row: ${errorMsg}`);
     }
+    
+    // Clear cache for Sheet1 since we updated a row
+    clearSheetCache('Sheet1!A1:D1000');
     
     return data;
   } catch (error) {
@@ -259,6 +300,9 @@ export const deleteRow = async (rowIndex) => {
       console.error('Google Sheets API error:', data);
       throw new Error(`Failed to delete row: ${errorMsg}`);
     }
+    
+    // Clear cache for Sheet1 since we deleted a row
+    clearSheetCache('Sheet1!A1:D1000');
     
     return data;
   } catch (error) {
@@ -488,6 +532,9 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
         throw new Error(`Failed to update chat: ${errorMsg}`);
       }
       
+      // Clear cache for HoldingsHistory since we updated it
+      clearSheetCache('HoldingsHistory!A1:E10000');
+      
       return updateData;
     }
     
@@ -537,6 +584,9 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       console.error('Google Sheets API error:', updateData);
       throw new Error(`Failed to update chat: ${errorMsg}`);
     }
+    
+    // Clear cache for HoldingsHistory since we updated it
+    clearSheetCache('HoldingsHistory!A1:E10000');
     
     return updateData;
   } catch (error) {
@@ -589,6 +639,9 @@ export const appendRowToSheet2 = async (rowData) => {
       console.error('Google Sheets API error:', data);
       throw new Error(`Failed to append row to Sheet2: ${errorMsg}`);
     }
+    
+    // Clear cache for Sheet2 since we added a row
+    clearSheetCache('Sheet2!A1:Q1000');
     
     return data;
   } catch (error) {
@@ -646,6 +699,9 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
       throw new Error(`Failed to append symbol to Sheet2: ${errorMsg}`);
     }
     
+    // Clear cache for Sheet2 since we added a symbol
+    clearSheetCache('Sheet2!A1:Q1000');
+    
     return data;
   } catch (error) {
     console.error('Error appending symbol to Sheet2:', error);
@@ -696,6 +752,9 @@ export const updateRowInSheet2 = async (rowIndex, rowData) => {
       console.error('Google Sheets API error:', data);
       throw new Error(`Failed to update row in Sheet2: ${errorMsg}`);
     }
+    
+    // Clear cache for Sheet2 since we updated a row
+    clearSheetCache('Sheet2!A1:Q1000');
     
     return data;
   } catch (error) {
@@ -782,6 +841,9 @@ export const deleteRowFromSheet2 = async (rowIndex) => {
       console.error('Google Sheets API error:', data);
       throw new Error(`Failed to delete row from Sheet2: ${errorMsg}`);
     }
+    
+    // Clear cache for Sheet2 since we deleted a row
+    clearSheetCache('Sheet2!A1:Q1000');
     
     return data;
   } catch (error) {

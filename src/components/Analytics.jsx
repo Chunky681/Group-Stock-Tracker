@@ -197,15 +197,41 @@ const Analytics = ({ refreshKey }) => {
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
 
   useEffect(() => {
-    loadPortfolio();
-    loadHistoryData();
-    loadHoldingsHistory();
+    // Load all data in parallel for better performance
+    Promise.all([
+      loadPortfolio(),
+      loadHistoryData(),
+      loadHoldingsHistory()
+    ]).catch(error => {
+      console.error('Error loading analytics data:', error);
+      setError(error.message || 'Failed to load analytics data.');
+    });
   }, [refreshKey]);
 
+  // Auto-refresh data every minute while user is on the page (especially for chats)
+  // This happens silently in the background without disrupting the user experience
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      console.log('Auto-refreshing analytics data silently (1 minute interval)...');
+      // Refresh all data silently - no loading states, no error messages, just update data
+      Promise.all([
+        loadPortfolio(true, true), // Force refresh + silent mode
+        loadHistoryData(true), // Force refresh
+        loadHoldingsHistory(true) // Force refresh to bypass cache and get latest chats
+      ]).catch(error => {
+        console.error('Error auto-refreshing analytics data:', error);
+        // Silently fail - don't disrupt user experience
+      });
+    }, 60000); // 60 seconds = 1 minute
+
+    // Cleanup interval on unmount
+    return () => clearInterval(intervalId);
+  }, []); // Empty dependency array - only run once on mount
+
   // Load holdings history from HoldingsHistory sheet (including chat data from column E)
-  const loadHoldingsHistory = async () => {
+  const loadHoldingsHistory = async (forceRefresh = false) => {
     try {
-      const data = await readSheetData('HoldingsHistory!A1:E10000');
+      const data = await readSheetData('HoldingsHistory!A1:E10000', forceRefresh);
       
       if (!data || data.length === 0) {
         setHoldingsHistory([]);
@@ -259,9 +285,9 @@ const Analytics = ({ refreshKey }) => {
   };
 
   // Load history data from History sheet
-  const loadHistoryData = async () => {
+  const loadHistoryData = async (forceRefresh = false) => {
     try {
-      const data = await readSheetData('History!A1:D10000');
+      const data = await readSheetData('History!A1:D10000', forceRefresh);
       
       if (!data || data.length === 0) {
         setHistoryData([]);
@@ -334,12 +360,14 @@ const Analytics = ({ refreshKey }) => {
     }
   };
 
-  const loadPortfolio = async () => {
-    setIsLoading(true);
-    setError(null);
+  const loadPortfolio = async (forceRefresh = false, silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       await initializeSheet();
-      const data = await readSheetData();
+      const data = await readSheetData(undefined, forceRefresh); // undefined uses default range
       
       const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
       
@@ -351,6 +379,20 @@ const Analytics = ({ refreshKey }) => {
       
       const uniqueTickers = [...new Set(rows.map(row => row[1]?.trim().toUpperCase()))];
       const quoteMap = {}; // Store full quote data with all metrics from Sheet2
+      
+      // Pre-fetch Sheet2 data once before looping through tickers
+      // This ensures we only make one API call to Sheet2 instead of one per ticker
+      const { fetchStockDataFromSheet } = await import('../utils/stockDataSheet');
+      const allStocks = await fetchStockDataFromSheet(); // This will use cache if available
+      
+      // Create a lookup map from stocks array for faster access
+      const stockLookup = new Map();
+      allStocks.forEach(stock => {
+        const visualSymbol = (stock.visualSymbol || '').toUpperCase();
+        const symbol = (stock.symbol || '').toUpperCase();
+        if (visualSymbol) stockLookup.set(visualSymbol, stock);
+        if (symbol && symbol !== visualSymbol) stockLookup.set(symbol, stock);
+      });
       
       for (const ticker of uniqueTickers) {
         // Handle CASH entries - they don't need stock data lookup
@@ -382,8 +424,37 @@ const Analytics = ({ refreshKey }) => {
         }
         
         try {
-          const quote = await getStockQuote(ticker);
-          quoteMap[ticker] = quote; // Store full quote object with all Sheet2 data
+          // Use pre-fetched stock data instead of making individual API calls
+          const stock = stockLookup.get(ticker);
+          if (stock) {
+            const previousClose = stock.price - stock.changeDollar;
+            const displaySymbol = stock.visualSymbol || stock.symbol;
+            
+            quoteMap[ticker] = {
+              symbol: displaySymbol,
+              visualSymbol: stock.visualSymbol || stock.symbol,
+              name: stock.name,
+              price: stock.price,
+              previousClose: previousClose,
+              change: stock.changeDollar,
+              changePercent: stock.changePercent,
+              currency: stock.currency,
+              priceOpen: stock.priceOpen,
+              dayHigh: stock.dayHigh,
+              dayLow: stock.dayLow,
+              week52High: stock.week52High,
+              week52Low: stock.week52Low,
+              volume: stock.volume,
+              marketCap: stock.marketCap,
+              peRatio: stock.peRatio,
+              beta: stock.beta,
+              dividendYield: stock.dividendYield,
+            };
+          } else {
+            // Fallback to API call if not found in pre-fetched data
+            const quote = await getStockQuote(ticker);
+            quoteMap[ticker] = quote;
+          }
         } catch (error) {
           console.error(`Error fetching price for ${ticker}:`, error);
           quoteMap[ticker] = {
@@ -424,15 +495,19 @@ const Analytics = ({ refreshKey }) => {
       
       setPortfolio(portfolioData);
       
-      // Ensure all users are selected if selection is empty
-      if (selectedUsers.size === 0 && uniqueUsers.length > 0) {
+      // Ensure all users are selected if selection is empty (only on initial load, not during silent refresh)
+      if (!silent && selectedUsers.size === 0 && uniqueUsers.length > 0) {
         setSelectedUsers(new Set(uniqueUsers));
       }
     } catch (error) {
       console.error('Error loading portfolio:', error);
-      setError(error.message || 'Failed to load portfolio.');
+      if (!silent) {
+        setError(error.message || 'Failed to load portfolio.');
+      }
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   };
 
