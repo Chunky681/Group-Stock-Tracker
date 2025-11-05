@@ -14,6 +14,28 @@ export const resetRequestCounts = () => {
   writeRequestCount = 0;
 };
 
+// Helper function to format date for HoldingsHistory column A
+// Format: YYYY-MM-DDTHH:mm:ss-HH:MM (e.g., 2025-11-02T20:30:00-05:00)
+const formatHoldingsHistoryDate = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  
+  // Get timezone offset in minutes and convert to HH:MM format
+  // Note: getTimezoneOffset() returns positive for timezones behind UTC (like EST -05:00)
+  // So we need to invert the sign for the ISO format
+  const offsetMinutes = date.getTimezoneOffset();
+  const offsetHours = Math.floor(Math.abs(offsetMinutes) / 60);
+  const offsetMins = Math.abs(offsetMinutes) % 60;
+  const offsetSign = offsetMinutes <= 0 ? '+' : '-'; // Inverted because getTimezoneOffset returns opposite
+  const offsetStr = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetMins).padStart(2, '0')}`;
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${offsetStr}`;
+};
+
 const getApiKey = () => {
   const key = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY || '';
   if (!key || key === 'your_api_key_here' || key.trim() === '') {
@@ -302,8 +324,10 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     }
     
     const rows = data.values || [];
-    if (rows.length < 2) {
-      throw new Error('No data found in HoldingsHistory');
+    // If HoldingsHistory only has headers or is empty, that's okay - we'll create a new record
+    // Only throw an error if the response itself failed
+    if (rows.length === 0) {
+      throw new Error('Failed to read HoldingsHistory: No data returned');
     }
     
     // Skip header row and find the most recent record for this username and ticker combination
@@ -311,38 +335,163 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     let mostRecentRowIndex = -1;
     let mostRecentDate = null;
     
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || row.length < 4) continue;
-      
-      const rowUsername = row[1]?.trim() || '';
-      const rowTicker = row[2]?.trim().toUpperCase() || '';
-      
-      // Filter by both username and ticker
-      if (rowUsername !== positionUsername.trim() || rowTicker !== ticker.toUpperCase()) continue;
-      
-      // Parse snapshot time
-      const snapshotTime = row[0]?.trim() || '';
-      let date;
-      try {
-        date = new Date(snapshotTime);
-        if (isNaN(date.getTime())) continue;
-      } catch (e) {
-        continue;
-      }
-      
-      // Track the most recent record
-      if (!mostRecentDate || date > mostRecentDate) {
-        mostRecentDate = date;
-        mostRecentRow = row;
-        mostRecentRowIndex = i + 1; // +1 because Google Sheets uses 1-based indexing
+    // Only search through rows if we have data rows (more than just headers)
+    if (rows.length >= 2) {
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length < 4) continue;
+        
+        const rowUsername = row[1]?.trim() || '';
+        const rowTicker = row[2]?.trim().toUpperCase() || '';
+        
+        // Filter by both username and ticker (case-insensitive for username)
+        if (rowUsername.toLowerCase() !== positionUsername.trim().toLowerCase() || rowTicker !== ticker.toUpperCase()) continue;
+        
+        // Parse snapshot time
+        const snapshotTime = row[0]?.trim() || '';
+        let date;
+        try {
+          date = new Date(snapshotTime);
+          if (isNaN(date.getTime())) continue;
+        } catch (e) {
+          continue;
+        }
+        
+        // Track the most recent record
+        if (!mostRecentDate || date > mostRecentDate) {
+          mostRecentDate = date;
+          mostRecentRow = row;
+          mostRecentRowIndex = i + 1; // +1 because Google Sheets uses 1-based indexing
+        }
       }
     }
     
     if (!mostRecentRow || mostRecentRowIndex === -1) {
-      throw new Error(`No record found for user "${positionUsername}" and ticker "${ticker}"`);
+      // No record found in HoldingsHistory - need to create one from Sheet1 data
+      console.log(`No record found in HoldingsHistory for user "${positionUsername}" and ticker "${ticker}". Creating new record from Sheet1 data.`);
+      
+      // Read Sheet1 to get current holdings for this user and ticker
+      readRequestCount++; // Track read
+      const sheet1Response = await fetch(
+        `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/Sheet1!A1:D10000?key=${getApiKey()}`
+      );
+      
+      const sheet1Data = await sheet1Response.json();
+      
+      if (!sheet1Response.ok) {
+        throw new Error(`Failed to read Sheet1: ${sheet1Data.error?.message || sheet1Response.status}`);
+      }
+      
+      const sheet1Rows = sheet1Data.values || [];
+      if (sheet1Rows.length < 2) {
+        throw new Error(`No holdings found in Sheet1 for user "${positionUsername}" and ticker "${ticker}"`);
+      }
+      
+      // Find all rows matching the username and ticker, sum up shares
+      let totalShares = 0;
+      for (let i = 1; i < sheet1Rows.length; i++) {
+        const row = sheet1Rows[i];
+        if (!row || row.length < 3) continue;
+        
+        const rowUsername = row[0]?.trim() || '';
+        const rowTicker = row[1]?.trim().toUpperCase() || '';
+        
+        if (rowUsername.toLowerCase() === positionUsername.trim().toLowerCase() && 
+            rowTicker === ticker.toUpperCase()) {
+          const shares = parseFloat(row[2]) || 0;
+          totalShares += shares;
+        }
+      }
+      
+      if (totalShares === 0) {
+        throw new Error(`No holdings found in Sheet1 for user "${positionUsername}" and ticker "${ticker}"`);
+      }
+      
+      // Create new row in HoldingsHistory: A=current time, B=username, C=ticker, D=shares, E=empty (will add chat)
+      const currentTime = formatHoldingsHistoryDate();
+      const newRow = [
+        currentTime, // Column A: Snapshot time
+        positionUsername.trim(), // Column B: Name
+        ticker.toUpperCase(), // Column C: Ticker
+        totalShares.toString(), // Column D: Quantity
+        '', // Column E: Chat (empty initially)
+      ];
+      
+      // Append the new row to HoldingsHistory
+      writeRequestCount++;
+      const appendResponse = await fetch(
+        `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/HoldingsHistory!A:E:append?valueInputOption=RAW`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            values: [newRow],
+          }),
+        }
+      );
+      
+      const appendData = await appendResponse.json();
+      
+      if (!appendResponse.ok) {
+        const errorMsg = appendData.error?.message || `HTTP ${appendResponse.status}`;
+        console.error('Google Sheets API error:', appendData);
+        throw new Error(`Failed to create HoldingsHistory record: ${errorMsg}`);
+      }
+      
+      // Get the row index of the newly created row
+      // The append response should include updatedRange with the new row number
+      let newRowIndex = rows.length + 1; // Default to next row
+      if (appendData.updates?.updatedRange) {
+        // Extract row number from range like "HoldingsHistory!A15:E15"
+        const match = appendData.updates.updatedRange.match(/!A(\d+):/);
+        if (match) {
+          newRowIndex = parseInt(match[1], 10);
+        }
+      }
+      
+      // Now add the chat message to the newly created row
+      const timestamp = new Date().toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      });
+      const newChatEntry = `${postingUser}: ${chatMessage} (${timestamp})`;
+      
+      // Update the cell in column E
+      const range = `HoldingsHistory!E${newRowIndex}`;
+      
+      writeRequestCount++;
+      const updateResponse = await fetch(
+        `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            values: [[newChatEntry]],
+          }),
+        }
+      );
+      
+      const updateData = await updateResponse.json();
+      
+      if (!updateResponse.ok) {
+        const errorMsg = updateData.error?.message || `HTTP ${updateResponse.status}`;
+        console.error('Google Sheets API error:', updateData);
+        throw new Error(`Failed to update chat: ${errorMsg}`);
+      }
+      
+      return updateData;
     }
     
+    // Existing record found - update it with chat message
     // Get existing chat messages (column E, index 4)
     const existingChats = mostRecentRow[4]?.trim() || '';
     
@@ -392,6 +541,251 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     return updateData;
   } catch (error) {
     console.error('Error updating holdings history chat:', error);
+    throw error;
+  }
+};
+
+// Sheet2 operations (Stock Data Sheet)
+export const appendRowToSheet2 = async (rowData) => {
+  const sheetId = getSheetId();
+  
+  if (!sheetId) {
+    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
+  }
+
+  // Get OAuth access token
+  let accessToken;
+  try {
+    await initializeGoogleAuth();
+    accessToken = await getAccessToken();
+  } catch (error) {
+    console.error('OAuth error:', error);
+    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
+  }
+
+  const range = 'Sheet2!A:Q';
+  
+  try {
+    writeRequestCount++;
+    
+    const response = await fetch(
+      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          values: [rowData],
+        }),
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      const errorMsg = data.error?.message || `HTTP ${response.status}`;
+      console.error('Google Sheets API error:', data);
+      throw new Error(`Failed to append row to Sheet2: ${errorMsg}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error appending row to Sheet2:', error);
+    throw error;
+  }
+};
+
+// Append a new row to Sheet2 but only write to the Symbol column (column B)
+// This preserves formulas in other columns (like Name in column C)
+export const appendRowToSheet2SymbolOnly = async (symbol) => {
+  const sheetId = getSheetId();
+  
+  if (!sheetId) {
+    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
+  }
+
+  // Get OAuth access token
+  let accessToken;
+  try {
+    await initializeGoogleAuth();
+    accessToken = await getAccessToken();
+  } catch (error) {
+    console.error('OAuth error:', error);
+    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
+  }
+
+  // Append a row but only provide value for column B (Symbol)
+  // By only providing values for columns A and B (A empty, B with symbol),
+  // we leave other columns untouched so formulas can populate
+  const range = 'Sheet2!A:B';
+  
+  try {
+    writeRequestCount++;
+    
+    const response = await fetch(
+      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          values: [['', symbol]], // Only write to columns A (empty) and B (symbol)
+        }),
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      const errorMsg = data.error?.message || `HTTP ${response.status}`;
+      console.error('Google Sheets API error:', data);
+      throw new Error(`Failed to append symbol to Sheet2: ${errorMsg}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error appending symbol to Sheet2:', error);
+    throw error;
+  }
+};
+
+export const updateRowInSheet2 = async (rowIndex, rowData) => {
+  const sheetId = getSheetId();
+  
+  if (!sheetId) {
+    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
+  }
+
+  // Get OAuth access token
+  let accessToken;
+  try {
+    await initializeGoogleAuth();
+    accessToken = await getAccessToken();
+  } catch (error) {
+    console.error('OAuth error:', error);
+    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
+  }
+
+  const range = `Sheet2!A${rowIndex}:Q${rowIndex}`;
+  
+  try {
+    writeRequestCount++;
+    
+    const response = await fetch(
+      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          values: [rowData],
+        }),
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      const errorMsg = data.error?.message || `HTTP ${response.status}`;
+      console.error('Google Sheets API error:', data);
+      throw new Error(`Failed to update row in Sheet2: ${errorMsg}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error updating row in Sheet2:', error);
+    throw error;
+  }
+};
+
+export const deleteRowFromSheet2 = async (rowIndex) => {
+  const sheetId = getSheetId();
+  
+  if (!sheetId) {
+    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
+  }
+
+  // Get OAuth access token
+  let accessToken;
+  try {
+    await initializeGoogleAuth();
+    accessToken = await getAccessToken();
+  } catch (error) {
+    console.error('OAuth error:', error);
+    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
+  }
+
+  // Use the Google Sheets API v4 batchUpdate to delete a row from Sheet2
+  // First, we need to get the sheet ID for Sheet2
+  try {
+    // Read Sheet2 to find the sheet ID
+    const sheetsResponse = await fetch(
+      `${GOOGLE_SHEETS_API_URL}/${sheetId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }
+    );
+    
+    const sheetsData = await sheetsResponse.json();
+    
+    if (!sheetsResponse.ok) {
+      throw new Error(`Failed to get sheet info: ${sheetsData.error?.message || sheetsResponse.status}`);
+    }
+    
+    // Find Sheet2's sheet ID
+    const sheet2Info = sheetsData.sheets?.find(sheet => sheet.properties.title === 'Sheet2');
+    if (!sheet2Info) {
+      throw new Error('Sheet2 not found');
+    }
+    
+    const sheet2Id = sheet2Info.properties.sheetId;
+    
+    writeRequestCount++;
+    
+    const response = await fetch(
+      `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: sheet2Id,
+                  dimension: 'ROWS',
+                  startIndex: rowIndex - 1, // Convert 1-based to 0-based index
+                  endIndex: rowIndex, // Delete just one row
+                },
+              },
+            },
+          ],
+        }),
+      }
+    );
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      const errorMsg = data.error?.message || `HTTP ${response.status}`;
+      console.error('Google Sheets API error:', data);
+      throw new Error(`Failed to delete row from Sheet2: ${errorMsg}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error deleting row from Sheet2:', error);
     throw error;
   }
 };

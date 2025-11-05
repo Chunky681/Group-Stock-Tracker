@@ -590,7 +590,7 @@ const Analytics = ({ refreshKey }) => {
 
   // Calculate stock gains over the past 30 days for a specific ticker
   const getStockGains = (ticker) => {
-    if (!ticker || holdingsHistory.length === 0 || selectedUsers.size === 0) {
+    if (!ticker || selectedUsers.size === 0) {
       return [];
     }
     
@@ -603,21 +603,48 @@ const Analytics = ({ refreshKey }) => {
         currentHoldings.set(item.username, currentShares + item.shares);
       });
     
-    // Get oldest holdings from HoldingsHistory - only for selected users
-    const oldestHoldings = new Map();
-    holdingsHistory
-      .filter(item => item.ticker === ticker && selectedUsers.has(item.username))
-      .forEach(item => {
-        const existing = oldestHoldings.get(item.username);
-        // Keep the oldest entry for each user
-        if (!existing || item.date < existing.date) {
-          oldestHoldings.set(item.username, {
-            username: item.username,
-            shares: item.shares,
-            date: item.date,
-          });
-        }
-      });
+    // Calculate date 30 days ago
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    // Get holdings from HoldingsHistory that are at least 30 days old
+    // Only for selected users - we want the most recent entry that is at least 30 days old
+    const holdings30DaysAgo = new Map();
+    
+    if (holdingsHistory.length > 0) {
+      holdingsHistory
+        .filter(item => item.ticker === ticker && selectedUsers.has(item.username))
+        .forEach(item => {
+          const itemDate = new Date(item.date);
+          const isAtLeast30DaysOld = itemDate <= thirtyDaysAgo;
+          
+          // Only consider entries that are at least 30 days old
+          if (!isAtLeast30DaysOld) {
+            return;
+          }
+          
+          const existing = holdings30DaysAgo.get(item.username);
+          
+          if (!existing) {
+            // No existing entry - store this one
+            holdings30DaysAgo.set(item.username, {
+              username: item.username,
+              shares: item.shares,
+              date: item.date,
+            });
+          } else {
+            // We have an existing entry - keep the most recent one (closest to 30 days ago)
+            const existingDate = new Date(existing.date);
+            if (itemDate > existingDate) {
+              holdings30DaysAgo.set(item.username, {
+                username: item.username,
+                shares: item.shares,
+                date: item.date,
+              });
+            }
+          }
+        });
+    }
     
     // Calculate gains for each user (only selected users)
     const gains = [];
@@ -629,8 +656,12 @@ const Analytics = ({ refreshKey }) => {
         return;
       }
       
-      const oldest = oldestHoldings.get(username);
-      const oldShares = oldest ? oldest.shares : 0;
+      const historical = holdings30DaysAgo.get(username);
+      
+      // If no historical record exists dating back 30 days,
+      // assume the entire current position is a gain (oldShares = 0)
+      const oldShares = historical ? historical.shares : 0;
+      
       const gain = currentShares - oldShares;
       
       // Only include users who have a non-zero change
@@ -644,23 +675,24 @@ const Analytics = ({ refreshKey }) => {
       }
     });
     
-    // Also include selected users who had holdings in the past but don't have any now (negative gain)
-    oldestHoldings.forEach((old, username) => {
+    // Also include selected users who had holdings 30+ days ago but don't have any now (negative gain)
+    holdings30DaysAgo.forEach((historical, username) => {
       // Only process selected users
       if (!selectedUsers.has(username)) {
         return;
       }
       
+      // holdings30DaysAgo already only contains entries that are at least 30 days old
       if (!currentHoldings.has(username)) {
         const currentShares = 0;
-        const gain = currentShares - old.shares;
+        const gain = currentShares - historical.shares;
         // Only include if gain is non-zero (negative gain means they sold all shares)
         if (gain !== 0) {
           gains.push({
             username,
             gain,
             currentShares,
-            oldShares: old.shares,
+            oldShares: historical.shares,
           });
         }
       }

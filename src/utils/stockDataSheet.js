@@ -1,6 +1,6 @@
 // Stock Data from Google Sheets (Sheet2)
 // Uses Visual Symbol column for all lookups and display
-import { readSheetData } from './googleSheets';
+import { readSheetData, appendRowToSheet2, appendRowToSheet2SymbolOnly, deleteRowFromSheet2 } from './googleSheets';
 // Note: Read tracking is now handled in googleSheets.js
 
 // Cache for stock data to minimize read requests
@@ -63,13 +63,21 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
     const stocks = [];
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      if (!row || row.length < 3 || !row[COLUMNS.VISUAL_SYMBOL]) {
+      if (!row || row.length < 2) {
         continue; // Skip empty rows
       }
 
+      const visualSymbol = row[COLUMNS.VISUAL_SYMBOL]?.trim() || '';
+      const symbol = row[COLUMNS.SYMBOL]?.trim() || '';
+      
+      // Include rows that have either Visual Symbol or Symbol
+      if (!visualSymbol && !symbol) {
+        continue; // Skip rows with neither symbol
+      }
+
       const stock = {
-        visualSymbol: row[COLUMNS.VISUAL_SYMBOL]?.trim() || '',
-        symbol: row[COLUMNS.SYMBOL]?.trim() || '', // Keep for reference but use visualSymbol for display
+        visualSymbol: visualSymbol,
+        symbol: symbol, // Keep for reference but use visualSymbol for display (or symbol if visualSymbol is empty)
         name: row[COLUMNS.NAME]?.trim() || '',
         price: parseNumber(row[COLUMNS.PRICE]),
         currency: row[COLUMNS.CURRENCY]?.trim() || 'USD',
@@ -87,10 +95,7 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
         dividendYield: parseNumber(row[COLUMNS.DIVIDEND_YIELD]) || 0, // From "Divident Yeild" column
       };
 
-      // Only add if we have at least a visual symbol
-      if (stock.visualSymbol) {
-        stocks.push(stock);
-      }
+      stocks.push(stock);
     }
 
     // Update cache
@@ -104,7 +109,7 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
   }
 };
 
-// Search stocks by Visual Symbol (primary) or Name
+// Search stocks by Visual Symbol (primary), Symbol (if Visual Symbol is empty), or Name
 export const searchStocksFromSheet = async (query) => {
   const stocks = await fetchStockDataFromSheet();
   const searchQuery = query.trim().toUpperCase();
@@ -116,21 +121,28 @@ export const searchStocksFromSheet = async (query) => {
   return stocks
     .filter(stock => {
       const visualSymbol = (stock.visualSymbol || '').toUpperCase();
+      const symbol = (stock.symbol || '').toUpperCase();
       const name = (stock.name || '').toUpperCase();
       
-      // Search primarily by Visual Symbol, then by name
-      return visualSymbol.includes(searchQuery) || name.includes(searchQuery);
+      // Search by Visual Symbol (primary), Symbol (if Visual Symbol is empty), or Name
+      return visualSymbol.includes(searchQuery) || 
+             symbol.includes(searchQuery) || 
+             name.includes(searchQuery);
     })
-    .map(stock => ({
-      symbol: stock.visualSymbol, // Use Visual Symbol as primary symbol for display
-      name: stock.name || stock.visualSymbol,
-      exchange: stock.currency || 'USD',
-      visualSymbol: stock.visualSymbol,
-    }))
+    .map(stock => {
+      // Use Visual Symbol if available, otherwise use Symbol
+      const displaySymbol = stock.visualSymbol || stock.symbol;
+      return {
+        symbol: displaySymbol, // Use Visual Symbol if available, otherwise Symbol
+        name: stock.name || displaySymbol,
+        exchange: stock.currency || 'USD',
+        visualSymbol: stock.visualSymbol || stock.symbol, // Use Symbol if Visual Symbol is empty
+      };
+    })
     .slice(0, 10);
 };
 
-// Get stock quote by Visual Symbol (primary lookup method)
+// Get stock quote by Visual Symbol (primary lookup method) or Symbol (if Visual Symbol is empty)
 export const getStockQuoteFromSheet = async (visualSymbolOrSymbol) => {
   const stocks = await fetchStockDataFromSheet();
   const searchSymbol = visualSymbolOrSymbol.trim().toUpperCase();
@@ -149,9 +161,12 @@ export const getStockQuoteFromSheet = async (visualSymbolOrSymbol) => {
   // Calculate previous close from price and change
   const previousClose = stock.price - stock.changeDollar;
 
+  // Use Visual Symbol if available, otherwise use Symbol
+  const displaySymbol = stock.visualSymbol || stock.symbol;
+
   return {
-    symbol: stock.visualSymbol, // Use Visual Symbol as primary symbol for display
-    visualSymbol: stock.visualSymbol,
+    symbol: displaySymbol, // Use Visual Symbol if available, otherwise Symbol
+    visualSymbol: stock.visualSymbol || stock.symbol, // Use Symbol if Visual Symbol is empty
     name: stock.name,
     price: stock.price,
     previousClose: previousClose,
@@ -176,6 +191,121 @@ export const getStockQuoteFromSheet = async (visualSymbolOrSymbol) => {
 export const clearStockDataCache = () => {
   stockDataCache = null;
   cacheTimestamp = null;
+};
+
+// Add a new ticker to Sheet2 and validate that Name column populates
+// Returns { success: boolean, message: string, rowIndex?: number }
+export const addNewTickerToSheet2 = async (tickerSymbol) => {
+  if (!tickerSymbol || !tickerSymbol.trim()) {
+    return { success: false, message: 'Ticker symbol is required' };
+  }
+
+  const symbol = tickerSymbol.trim().toUpperCase();
+  
+  try {
+    // Check if ticker already exists in Symbol column
+    const stocks = await fetchStockDataFromSheet(true); // Force refresh to get latest data
+    const existingStock = stocks.find(s => 
+      (s.symbol || '').toUpperCase() === symbol || 
+      (s.visualSymbol || '').toUpperCase() === symbol
+    );
+    
+    if (existingStock) {
+      return { 
+        success: false, 
+        message: `Ticker ${symbol} already exists in Sheet2` 
+      };
+    }
+
+    // Get current Sheet2 data to find the next row index
+    const data = await readSheetData('Sheet2!A1:Q1000');
+    const nextRowIndex = data.length + 1; // Next row after current data
+
+    // Only write to columns A (empty) and B (Symbol) to preserve formulas in other columns
+    // This ensures formulas in columns C-Q (like Name) can populate automatically
+    await appendRowToSheet2SymbolOnly(symbol);
+    
+    // Wait for Google Sheets formulas to populate (Name column likely has a formula)
+    // Wait 5 seconds to allow formulas to recalculate (based on observed timing for JPM and similar tickers)
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Refresh cache and check if Name column populated
+    clearStockDataCache();
+    const updatedData = await readSheetData('Sheet2!A1:Q1000');
+    
+    // Find the row we just added (should be the last row with our symbol)
+    let addedRowIndex = -1;
+    let namePopulated = false;
+    
+    for (let i = updatedData.length - 1; i >= 1; i--) { // Start from bottom, skip header
+      const row = updatedData[i];
+      if (row && row.length > 1 && row[COLUMNS.SYMBOL]?.trim().toUpperCase() === symbol) {
+        addedRowIndex = i + 1; // 1-based index for Google Sheets
+        const name = row[COLUMNS.NAME]?.trim() || '';
+        namePopulated = name.length > 0;
+        break;
+      }
+    }
+
+    if (addedRowIndex === -1) {
+      return { 
+        success: false, 
+        message: 'Failed to find the added row in Sheet2' 
+      };
+    }
+
+    if (!namePopulated) {
+      // Name column didn't populate, delete the row
+      try {
+        await deleteRowFromSheet2(addedRowIndex);
+        clearStockDataCache();
+        return { 
+          success: false, 
+          message: `Ticker ${symbol} was added but Name column did not populate. The ticker may be invalid or unavailable. Row has been removed.` 
+        };
+      } catch (deleteError) {
+        console.error('Error deleting invalid row:', deleteError);
+        return { 
+          success: false, 
+          message: `Ticker ${symbol} was added but Name column did not populate. Failed to remove invalid row: ${deleteError.message}` 
+        };
+      }
+    }
+
+    // Success! Name column populated
+    clearStockDataCache();
+    return { 
+      success: true, 
+      message: `Ticker ${symbol} added successfully to Sheet2`,
+      rowIndex: addedRowIndex
+    };
+  } catch (error) {
+    console.error('Error adding new ticker to Sheet2:', error);
+    return { 
+      success: false, 
+      message: `Failed to add ticker ${symbol}: ${error.message}` 
+    };
+  }
+};
+
+// Check if a ticker exists in Sheet2 (by Symbol column)
+export const tickerExistsInSheet2 = async (tickerSymbol) => {
+  if (!tickerSymbol || !tickerSymbol.trim()) {
+    return false;
+  }
+
+  const symbol = tickerSymbol.trim().toUpperCase();
+  
+  try {
+    const stocks = await fetchStockDataFromSheet();
+    return stocks.some(s => 
+      (s.symbol || '').toUpperCase() === symbol || 
+      (s.visualSymbol || '').toUpperCase() === symbol
+    );
+  } catch (error) {
+    console.error('Error checking if ticker exists:', error);
+    return false;
+  }
 };
 
 // Note: Reset functions moved to googleSheets.js for centralized tracking

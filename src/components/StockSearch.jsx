@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, TrendingUp, Loader, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Search, TrendingUp, Loader, AlertCircle, CheckCircle2, Plus } from 'lucide-react';
 import { searchTickers, getStockQuote } from '../utils/stockApi';
+import { addNewTickerToSheet2, tickerExistsInSheet2 } from '../utils/stockDataSheet';
 
 const StockSearch = ({ onStockSelected }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -12,10 +13,13 @@ const StockSearch = ({ onStockSelected }) => {
   const [isLoadingQuote, setIsLoadingQuote] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const [isAddingTicker, setIsAddingTicker] = useState(false);
+  const [canAddTicker, setCanAddTicker] = useState(false);
 
   const performSearch = useCallback(async () => {
     if (searchQuery.trim().length < 2) {
       setSearchResults([]);
+      setCanAddTicker(false);
       return;
     }
 
@@ -26,15 +30,39 @@ const StockSearch = ({ onStockSelected }) => {
       const results = await searchTickers(searchQuery);
       console.log('Search returned results:', results);
       setSearchResults(results);
-      if (results.length === 0 && searchQuery.trim().length >= 2) {
-        // Check if it's a rate limit issue
-        console.warn('No search results - may be rate limited');
-        setError('Search rate limit reached or no results found. You can still enter a ticker symbol manually (e.g., TSLA) and press Enter.');
+      
+      const tickerUpper = searchQuery.trim().toUpperCase();
+      
+      // Check if typed ticker exactly matches any search result
+      const exactMatch = results.some(result => 
+        (result.symbol || '').toUpperCase() === tickerUpper ||
+        (result.visualSymbol || '').toUpperCase() === tickerUpper
+      );
+      
+      // Check if ticker exists in Sheet2
+      const exists = await tickerExistsInSheet2(tickerUpper);
+      
+      // Show Add button if:
+      // 1. No exact match in search results AND ticker doesn't exist in Sheet2
+      // 2. OR no search results AND ticker doesn't exist in Sheet2
+      if (!exactMatch && !exists && searchQuery.trim().length >= 1) {
+        setCanAddTicker(true);
+        setError(null); // Clear error so we show the "Add Ticker" button instead
+      } else if (results.length === 0 && exists) {
+        // Ticker exists but search didn't find it (might be a display issue)
+        setCanAddTicker(false);
+        setError('Ticker found but search returned no results. Try entering the ticker manually.');
+      } else {
+        setCanAddTicker(false);
+        if (results.length === 0 && searchQuery.trim().length >= 2) {
+          setError('Search rate limit reached or no results found. You can still enter a ticker symbol manually (e.g., TSLA) and press Enter.');
+        }
       }
     } catch (error) {
       console.error('Search error:', error);
       setError(error.message || 'Search failed. You can still enter a ticker symbol manually.');
       setSearchResults([]);
+      setCanAddTicker(false);
     } finally {
       setIsSearching(false);
     }
@@ -62,6 +90,7 @@ const StockSearch = ({ onStockSelected }) => {
     setError(null);
     setSuccessMessage(null);
     setSearchResults([]);
+    setCanAddTicker(false);
     
     try {
       const quote = await getStockQuote(stock.symbol);
@@ -91,20 +120,76 @@ const StockSearch = ({ onStockSelected }) => {
         setSelectedStock({ symbol: quote.symbol, name: quote.name });
         setSuccessMessage(`Successfully loaded ${quote.symbol}`);
         onStockSelected(quote);
+        setCanAddTicker(false);
       } catch (error) {
-        setError(`Failed to fetch stock data: ${error.message}`);
         setSelectedStock(null);
         setStockData(null);
+        
+        // Check if ticker doesn't exist in Sheet2
+        const tickerUpper = searchQuery.trim().toUpperCase();
+        const exists = await tickerExistsInSheet2(tickerUpper);
+        if (!exists) {
+          setCanAddTicker(true);
+          setError(null); // Clear error so we show the "Add Ticker" button instead
+        } else {
+          setError(`Failed to fetch stock data: ${error.message}`);
+          setCanAddTicker(false);
+        }
       } finally {
         setIsLoadingQuote(false);
       }
     }
   };
 
+  const handleAddNewTicker = async () => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 1) {
+      setError('Please enter a ticker symbol first');
+      return;
+    }
+
+    const ticker = searchQuery.trim().toUpperCase();
+    setIsAddingTicker(true);
+    setError(null);
+    setSuccessMessage(null);
+    setSearchResults([]);
+    
+    try {
+      const result = await addNewTickerToSheet2(ticker);
+      
+      if (result.success) {
+        setSuccessMessage(`Tracking is now enabled for ${ticker}`);
+        setCanAddTicker(false);
+        
+        // Wait a moment, then try to fetch the quote
+        setTimeout(async () => {
+          try {
+            setIsLoadingQuote(true);
+            const quote = await getStockQuote(ticker);
+            setStockData(quote);
+            setSelectedStock({ symbol: quote.symbol, name: quote.name });
+            onStockSelected(quote);
+          } catch (quoteError) {
+            console.error('Error fetching quote after adding ticker:', quoteError);
+            setError(`Ticker added but failed to fetch quote: ${quoteError.message}`);
+          } finally {
+            setIsLoadingQuote(false);
+          }
+        }, 500);
+      } else {
+        setError(result.message);
+      }
+    } catch (error) {
+      console.error('Error adding new ticker:', error);
+      setError(`Failed to add ticker: ${error.message}`);
+    } finally {
+      setIsAddingTicker(false);
+    }
+  };
+
   return (
     <div className="w-full">
       <div className="relative">
-        <div className="relative">
+        <div className="relative flex items-center">
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5 z-10" />
           <input
             type="text"
@@ -113,10 +198,14 @@ const StockSearch = ({ onStockSelected }) => {
               setSearchQuery(e.target.value);
               setError(null);
               setSuccessMessage(null);
+              setCanAddTicker(false);
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isLoadingQuote) {
-                if (searchResults.length > 0 && searchResults[0]) {
+              if (e.key === 'Enter' && !isLoadingQuote && !isAddingTicker) {
+                if (canAddTicker && searchQuery.trim().length >= 1) {
+                  // If ticker can be added, trigger add
+                  handleAddNewTicker();
+                } else if (searchResults.length > 0 && searchResults[0]) {
                   handleStockSelect(searchResults[0]);
                 } else if (searchQuery.trim().length >= 1) {
                   handleManualEntry();
@@ -124,17 +213,36 @@ const StockSearch = ({ onStockSelected }) => {
               }
             }}
             placeholder="Search for a stock ticker (e.g., AAPL, MSFT, GOOGL)..."
-            className="input-field pl-12 pr-12"
-            disabled={isLoadingQuote}
+            className={`input-field pl-12 ${canAddTicker && !isSearching && !isLoadingQuote ? 'pr-32' : 'pr-12'}`}
+            disabled={isLoadingQuote || isAddingTicker}
           />
-          {(isSearching || isLoadingQuote) && (
+          {/* Start Tracking Button - appears inside input on the right */}
+          {canAddTicker && !isSearching && !isLoadingQuote && !isAddingTicker && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1, y: '-50%' }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              onClick={handleAddNewTicker}
+              className="absolute right-2 top-1/2 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors z-20"
+              whileHover={{ scale: 1.05, y: '-50%' }}
+              whileTap={{ scale: 0.95, y: '-50%' }}
+              title={`Start tracking ${searchQuery.trim().toUpperCase()}`}
+            >
+              <Plus className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="whitespace-nowrap">Start Tracking</span>
+            </motion.button>
+          )}
+          {(isSearching || isLoadingQuote) && !canAddTicker && (
             <Loader className={`absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin ${isSearching ? 'text-primary-500' : 'text-primary-400'}`} />
+          )}
+          {isAddingTicker && (
+            <Loader className="absolute right-4 top-1/2 transform -translate-y-1/2 w-5 h-5 animate-spin text-blue-400" />
           )}
         </div>
 
         {/* Error Message */}
         <AnimatePresence>
-          {error && (
+          {error && !canAddTicker && (
             <motion.div
               initial={{ opacity: 0, y: -10, height: 0 }}
               animate={{ opacity: 1, y: 0, height: 'auto' }}
@@ -144,6 +252,22 @@ const StockSearch = ({ onStockSelected }) => {
             >
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{error}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Loading state when adding ticker */}
+        <AnimatePresence>
+          {isAddingTicker && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: -10, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="mt-2 flex items-center gap-2 text-blue-400 text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-3"
+            >
+              <Loader className="w-4 h-4 animate-spin" />
+              <span>Starting tracking for ticker "{searchQuery.trim().toUpperCase()}" (this may take up to 5 seconds)...</span>
             </motion.div>
           )}
         </AnimatePresence>
