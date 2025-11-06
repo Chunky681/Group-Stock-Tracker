@@ -32,11 +32,16 @@ const AddRealEstateForm = ({ selectedUser, onSuccess, refreshKey }) => {
     try {
       // Save real estate as ticker "REAL ESTATE" with the dollar amount as shares
       // Price will be treated as $1.00 per "share" (dollar)
+      // For new records (no existing record), set LastPositionChange to positive value
+      // The form prevents submission if hasExistingRealEstate is true, so this is always a new record
+      const changeAmount = valueNum; // Positive for new records
+      
       const rowData = [
         selectedUser.trim(),
         'REAL ESTATE',
         valueNum.toString(),
         formatHoldingsHistoryDate(),
+        changeAmount.toString(), // LastPositionChange column - positive for new records
       ];
 
       console.log('Attempting to add real estate to Google Sheets...');

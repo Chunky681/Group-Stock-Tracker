@@ -153,7 +153,10 @@ export const appendRow = async (rowData) => {
     throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
   }
 
-  const range = 'Sheet1!A:D';
+  // Extend range to include LastPositionChange column (E) if rowData has 5 elements
+  const range = rowData.length >= 5 
+    ? 'Sheet1!A:E'
+    : 'Sheet1!A:D';
   
   try {
     // Track write request
@@ -182,7 +185,7 @@ export const appendRow = async (rowData) => {
     }
     
     // Clear cache for Sheet1 since we added a row
-    clearSheetCache('Sheet1!A1:D1000');
+    clearSheetCache('Sheet1!A1:E1000');
     
     return data;
   } catch (error) {
@@ -208,7 +211,10 @@ export const updateRow = async (rowIndex, rowData) => {
     throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
   }
 
-  const range = `Sheet1!A${rowIndex}:D${rowIndex}`;
+  // Extend range to include LastPositionChange column (E) if rowData has 5 elements
+  const range = rowData.length >= 5 
+    ? `Sheet1!A${rowIndex}:E${rowIndex}`
+    : `Sheet1!A${rowIndex}:D${rowIndex}`;
   
   try {
     // Track write request

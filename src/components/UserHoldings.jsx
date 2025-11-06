@@ -251,12 +251,17 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
         throw new Error('Invalid row index (must be >= 2 to account for header)');
       }
       
-      // Update the row - keep username and ticker, update shares
+      // Calculate the change amount (new shares - old shares)
+      const oldShares = holding.shares || 0;
+      const changeAmount = sharesNum - oldShares;
+      
+      // Update the row - keep username and ticker, update shares, add change amount
       const rowData = [
         selectedUser.trim(),
         editingTicker,
         sharesNum.toString(),
         formatHoldingsHistoryDate(),
+        changeAmount.toString(), // LastPositionChange column
       ];
       
       await updateRow(rowIndex, rowData);

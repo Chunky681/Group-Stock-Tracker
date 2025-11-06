@@ -35,11 +35,16 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess, refreshKey }) => {
     setIsSubmitting(true);
 
     try {
+      // For new records (no existing record), set LastPositionChange to positive value
+      // The form prevents submission if hasExistingStock is true, so this is always a new record
+      const changeAmount = sharesNum; // Positive for new records
+      
       const rowData = [
         selectedUser.trim(),
         stockData.symbol,
         sharesNum.toString(),
         formatHoldingsHistoryDate(),
+        changeAmount.toString(), // LastPositionChange column - positive for new records
       ];
 
       console.log('Attempting to add stock to Google Sheets...');

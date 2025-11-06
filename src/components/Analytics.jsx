@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell, Coins, Building2, ArrowUp, ArrowDown } from 'lucide-react';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis, ReferenceDot } from 'recharts';
 import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
@@ -367,7 +367,7 @@ const Analytics = ({ refreshKey }) => {
     }
     try {
       await initializeSheet();
-      const data = await readSheetData(undefined, forceRefresh); // undefined uses default range
+      const data = await readSheetData('Sheet1!A1:E1000', forceRefresh); // Include column E for LastPositionChange
       
       const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
       
@@ -469,6 +469,8 @@ const Analytics = ({ refreshKey }) => {
       const portfolioData = rows.map((row, index) => {
         const ticker = row[1]?.trim().toUpperCase() || '';
         const shares = parseFloat(row[2]) || 0;
+        const lastUpdated = row[3]?.trim() || ''; // Timestamp from Sheet1
+        const lastPositionChange = row[4] ? parseFloat(row[4]) : null; // LastPositionChange column (E)
         const quote = quoteMap[ticker] || { price: 0, dividendYield: 0 };
         const price = quote.price || 0;
         const dividendYield = quote.dividendYield || 0;
@@ -488,6 +490,8 @@ const Analytics = ({ refreshKey }) => {
           yearlyDividend: shares * price * (dividendYield / 100),
           isCash, // Flag to identify cash holdings
           isRealEstate, // Flag to identify real estate holdings
+          lastUpdated, // Timestamp from Sheet1
+          lastPositionChange, // Change amount from LastPositionChange column
           // Store full quote data for detailed display
           fullQuote: quote,
         };
@@ -1052,6 +1056,7 @@ const Analytics = ({ refreshKey }) => {
             selectedUsers={selectedUsers}
             timePeriod={timePeriod}
             currentTotalValue={totalValue}
+            portfolio={portfolio}
           />
         </motion.div>
       )}
@@ -1827,7 +1832,27 @@ const Analytics = ({ refreshKey }) => {
 };
 
 // Portfolio Value Over Time Chart Component
-const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTotalValue }) => {
+// Helper function to parse timestamp from Sheet1 format (YYYY-MM-DDTHH:mm:ss-HH:MM)
+const parseSheet1Timestamp = (timestampStr) => {
+  if (!timestampStr || !timestampStr.trim()) {
+    return null;
+  }
+  
+  try {
+    // Format: YYYY-MM-DDTHH:mm:ss-HH:MM (e.g., 2025-11-05T13:44:16-05:00)
+    // Parse using the Date constructor which handles ISO-like strings with timezone offset
+    const date = new Date(timestampStr);
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  } catch (error) {
+    console.error('Error parsing timestamp:', timestampStr, error);
+    return null;
+  }
+};
+
+const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTotalValue, portfolio = [] }) => {
   // Filter and process history data
   const chartData = useMemo(() => {
     const now = new Date();
@@ -2223,6 +2248,156 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
     return result;
   }, [historyData, selectedUsers, timePeriod, currentTotalValue]);
   
+  // Calculate position change markers for 1D view
+  const positionChanges = useMemo(() => {
+    if (timePeriod !== '1D' || !portfolio || portfolio.length === 0 || chartData.length === 0) {
+      return [];
+    }
+    
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    // Filter portfolio records from last 24 hours and selected users
+    const recentChanges = portfolio.filter(item => {
+      if (!selectedUsers.has(item.username)) {
+        return false;
+      }
+      
+      if (!item.lastUpdated) {
+        return false;
+      }
+      
+      const updateDate = parseSheet1Timestamp(item.lastUpdated);
+      if (!updateDate) {
+        return false;
+      }
+      
+      return updateDate >= twentyFourHoursAgo && updateDate <= now;
+    });
+    
+    // Group by timestamp and username to get unique position changes
+    // Map: timestamp -> username -> { username, timestamp, portfolioValue }
+    const changeMap = new Map();
+    
+    recentChanges.forEach(item => {
+      const updateDate = parseSheet1Timestamp(item.lastUpdated);
+      if (!updateDate) {
+        return;
+      }
+      
+      const timestamp = updateDate.getTime();
+      
+      // For each timestamp, calculate the portfolio value at that time
+      // Find the closest chart data point or interpolate
+      let portfolioValue = currentTotalValue;
+      
+      // Find the closest chart data point by time difference
+      let closestPoint = null;
+      let minDiff = Infinity;
+      
+      chartData.forEach(point => {
+        const diff = Math.abs(point.timestamp - timestamp);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestPoint = point;
+        }
+      });
+      
+      if (closestPoint) {
+        // If we have a point before and after, interpolate
+        const pointIndex = chartData.findIndex(p => p.timestamp === closestPoint.timestamp);
+        if (pointIndex > 0 && timestamp < closestPoint.timestamp) {
+          // Interpolate between the point before and this point
+          const beforePoint = chartData[pointIndex - 1];
+          const ratio = (timestamp - beforePoint.timestamp) / (closestPoint.timestamp - beforePoint.timestamp);
+          portfolioValue = beforePoint.value + (closestPoint.value - beforePoint.value) * ratio;
+        } else if (pointIndex < chartData.length - 1 && timestamp > closestPoint.timestamp) {
+          // Interpolate between this point and the point after
+          const afterPoint = chartData[pointIndex + 1];
+          const ratio = (timestamp - closestPoint.timestamp) / (afterPoint.timestamp - closestPoint.timestamp);
+          portfolioValue = closestPoint.value + (afterPoint.value - closestPoint.value) * ratio;
+        } else {
+          // Use the closest point's value
+          portfolioValue = closestPoint.value;
+        }
+      }
+      
+      if (!changeMap.has(timestamp)) {
+        changeMap.set(timestamp, new Map());
+      }
+      
+      const userMap = changeMap.get(timestamp);
+      // Only keep the first change per user per timestamp
+      if (!userMap.has(item.username)) {
+        userMap.set(item.username, {
+          username: item.username,
+          ticker: item.ticker,
+          shares: item.shares,
+          changeAmount: item.lastPositionChange, // Use change amount instead of shares
+          timestamp: timestamp,
+          portfolioValue: portfolioValue,
+        });
+      }
+    });
+    
+    // Convert to array format for chart markers
+    const result = [];
+    changeMap.forEach((userMap, timestamp) => {
+      userMap.forEach((change) => {
+        // Only include changes where changeAmount is defined and not null
+        if (change.changeAmount !== null && change.changeAmount !== undefined && !isNaN(change.changeAmount)) {
+          result.push({
+            x: timestamp,
+            y: change.portfolioValue,
+            username: change.username,
+            ticker: change.ticker,
+            shares: change.shares,
+            changeAmount: change.changeAmount,
+            timestamp: change.timestamp,
+          });
+        }
+      });
+    });
+    
+    // Sort by timestamp
+    return result.sort((a, b) => a.timestamp - b.timestamp);
+  }, [portfolio, selectedUsers, timePeriod, chartData, currentTotalValue]);
+  
+  // Merge position changes into chart data for better tooltip integration
+  const chartDataWithPositionChanges = useMemo(() => {
+    if (timePeriod !== '1D' || positionChanges.length === 0) {
+      return chartData;
+    }
+    
+    // Add position change markers to chart data
+    const merged = [...chartData];
+    positionChanges.forEach(change => {
+      // Find if there's already a data point at this timestamp (within 1 minute)
+      const existingIndex = merged.findIndex(point => 
+        Math.abs(point.timestamp - change.timestamp) < 60000
+      );
+      
+      if (existingIndex >= 0) {
+        // Mark existing point as having a position change
+        merged[existingIndex].positionChange = change;
+      } else {
+        // Add a new data point for the position change
+        merged.push({
+          timestamp: change.timestamp,
+          value: change.y,
+          date: formatDateForChart(new Date(change.timestamp), timePeriod),
+          fullDate: `${new Date(change.timestamp).getFullYear()}-${String(new Date(change.timestamp).getMonth() + 1).padStart(2, '0')}-${String(new Date(change.timestamp).getDate()).padStart(2, '0')}`,
+          dateObj: new Date(change.timestamp),
+          positionChange: change,
+          isPositionChange: true,
+        });
+      }
+    });
+    
+    // Sort by timestamp
+    return merged.sort((a, b) => a.timestamp - b.timestamp);
+  }, [chartData, positionChanges, timePeriod]);
+  
   if (chartData.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-slate-400">
@@ -2290,7 +2465,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart 
-            data={chartData} 
+            data={chartDataWithPositionChanges} 
             margin={{ top: 5, right: 20, bottom: 5, left: 20 }}
             syncId="portfolioChart"
           >
@@ -2322,11 +2497,61 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                   return null;
                 }
                 
-                // Use default tooltip behavior for all time periods (including ALL)
-                // Recharts handles snapping automatically
                 const payload = props.payload[0];
-                // Get the formatted date from the payload data, or convert the timestamp label
                 const dataPoint = payload.payload;
+                
+                // Debug: log payload structure to understand what we're working with
+                if (dataPoint?.positionChange || dataPoint?.isPositionChange) {
+                  console.log('Tooltip payload with position change:', { payload, dataPoint, label: props.label });
+                }
+                
+                // Check if this is a position change marker
+                const positionChange = dataPoint?.positionChange;
+                if (positionChange) {
+                  const formattedDate = formatDateForChart(new Date(positionChange.timestamp), timePeriod);
+                  // Format ticker for display (remove exchange prefix if present for cleaner display)
+                  const displayTicker = positionChange.ticker?.replace(/^BATS:/, '') || positionChange.ticker || 'Unknown';
+                  const tickerUpper = positionChange.ticker?.toUpperCase() || '';
+                  const changeAmount = positionChange.changeAmount || 0;
+                  const changeText = changeAmount >= 0 
+                    ? `+${changeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : `${changeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                  const changeColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
+                  
+                  // Determine the unit label based on asset type
+                  let unitLabel = 'shares';
+                  if (tickerUpper === 'CASH' || tickerUpper === 'USD') {
+                    unitLabel = 'cash';
+                  } else if (tickerUpper === 'REAL ESTATE') {
+                    unitLabel = 'equity';
+                  }
+                  
+                  return (
+                    <div 
+                      className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
+                      style={{
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #475569',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
+                        {formattedDate}
+                      </p>
+                      <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
+                        {positionChange.username} changed their position
+                      </p>
+                      <p style={{ color: '#ffffff', fontSize: '14px', marginBottom: '4px' }}>
+                        {displayTicker}
+                      </p>
+                      <p style={{ color: changeColor, fontSize: '16px', fontWeight: 'bold' }}>
+                        {changeText} {unitLabel}
+                      </p>
+                    </div>
+                  );
+                }
+                
+                // Regular line chart tooltip
                 const formattedDate = dataPoint?.date || (props.label ? formatDateForChart(new Date(props.label), timePeriod) : '');
                 
                 return (
@@ -2352,24 +2577,79 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               animationDuration={0}
               allowEscapeViewBox={{ x: false, y: false }}
               cursor={{ stroke: '#0ea5e9', strokeWidth: 1, strokeDasharray: '3 3' }}
+              position={{ x: 'auto', y: 'auto' }}
             />
             <Line
               type="monotone"
               dataKey="value"
               stroke="#0ea5e9"
               strokeWidth={2}
-              dot={{ 
-                r: timePeriod === '1W' ? 4 : 5, 
-                fill: '#0ea5e9', 
-                strokeWidth: 2, 
-                stroke: '#ffffff'
+              dot={(props) => {
+                const { cx, cy, payload } = props;
+                // Check if this point has a position change marker
+                const positionChange = payload?.positionChange;
+                if (positionChange) {
+                  const changeAmount = positionChange.changeAmount || 0;
+                  // Green for positive changes, red for negative
+                  const dotColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
+                  
+                  return (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={6}
+                      fill={dotColor}
+                      stroke="#ffffff"
+                      strokeWidth={2}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  );
+                }
+                // Regular dot for other points
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={timePeriod === '1W' ? 4 : 5}
+                    fill="#0ea5e9"
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                  />
+                );
               }}
-              activeDot={{ 
-                r: timePeriod === '1W' ? 8 : 9, 
-                fill: '#0ea5e9', 
-                stroke: '#ffffff', 
-                strokeWidth: 2,
-                style: { cursor: 'pointer' }
+              activeDot={(props) => {
+                const { cx, cy, payload } = props;
+                // Check if this point has a position change marker
+                const positionChange = payload?.positionChange;
+                if (positionChange) {
+                  const changeAmount = positionChange.changeAmount || 0;
+                  // Green for positive changes, red for negative
+                  const dotColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
+                  
+                  return (
+                    <circle
+                      cx={cx}
+                      cy={cy}
+                      r={10}
+                      fill={dotColor}
+                      stroke="#ffffff"
+                      strokeWidth={2}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  );
+                }
+                // Regular active dot
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={timePeriod === '1W' ? 8 : 9}
+                    fill="#0ea5e9"
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                    style={{ cursor: 'pointer' }}
+                  />
+                );
               }}
               connectNulls={false}
               isAnimationActive={false}

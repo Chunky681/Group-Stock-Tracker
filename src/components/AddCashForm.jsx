@@ -32,11 +32,16 @@ const AddCashForm = ({ selectedUser, onSuccess, refreshKey }) => {
     try {
       // Save cash as ticker "CASH" with the dollar amount as shares
       // Price will be treated as $1.00 per "share" (dollar)
+      // For new records (no existing record), set LastPositionChange to positive value
+      // The form prevents submission if hasExistingCash is true, so this is always a new record
+      const changeAmount = amountNum; // Positive for new records
+      
       const rowData = [
         selectedUser.trim(),
         'CASH',
         amountNum.toString(),
         formatHoldingsHistoryDate(),
+        changeAmount.toString(), // LastPositionChange column - positive for new records
       ];
 
       console.log('Attempting to add cash to Google Sheets...');
