@@ -1667,32 +1667,65 @@ const Analytics = ({ refreshKey }) => {
                           )}
                         </div>
                         {stock.fullQuote?.name && (
-                          <p className="text-slate-400 text-sm">{stock.fullQuote.name}</p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-white">
-                          ${stock.price.toFixed(2)}
-                        </div>
-                        {stock.fullQuote?.changePercent !== undefined && (
-                          <div className={`text-sm font-semibold ${
-                            (stock.fullQuote.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
-                          }`}>
-                            {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
-                            {(stock.fullQuote.changePercent || 0).toFixed(2)}%
-                          </div>
+                          <p className="text-slate-400 text-sm mb-3">{stock.fullQuote.name}</p>
                         )}
                         {!isExpanded && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-xs text-slate-500">
-                              Total Value: ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Total Shares: {(stock.totalShares || 0).toFixed(2)}
-                            </p>
+                          <div className="flex flex-col items-start">
+                            {/* Price - left center */}
+                            <div className="text-2xl font-bold text-white mb-1">
+                              ${stock.price.toFixed(2)}
+                            </div>
+                            {/* Change amount (percent change) - below price */}
+                            {(stock.fullQuote?.change !== undefined || stock.fullQuote?.changePercent !== undefined) && (
+                              <div className={`text-sm font-semibold ${
+                                (stock.fullQuote?.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                              }`}>
+                                {stock.fullQuote?.change !== undefined && (
+                                  <>
+                                    {(stock.fullQuote.change || 0) >= 0 ? '+' : ''}
+                                    ${(stock.fullQuote.change || 0).toFixed(2)}
+                                    {' '}
+                                  </>
+                                )}
+                                {stock.fullQuote?.changePercent !== undefined && (
+                                  <>
+                                    ({(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
+                                    {(stock.fullQuote.changePercent || 0).toFixed(2)}%)
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
+                      {!isExpanded && (
+                        <div className="text-right">
+                          {/* Total Value - top right, similar to CASH/REAL ESTATE */}
+                          <div className="text-2xl font-bold text-white">
+                            ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <p className="text-sm text-slate-400 mb-1">Total Value</p>
+                          {/* Total Shares - below Total Value */}
+                          <p className="text-xs text-slate-500">
+                            Total Shares: {(stock.totalShares || 0).toFixed(2)}
+                          </p>
+                        </div>
+                      )}
+                      {isExpanded && (
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-white">
+                            ${stock.price.toFixed(2)}
+                          </div>
+                          {stock.fullQuote?.changePercent !== undefined && (
+                            <div className={`text-sm font-semibold ${
+                              (stock.fullQuote.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                            }`}>
+                              {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
+                              {(stock.fullQuote.changePercent || 0).toFixed(2)}%
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Portfolio Holdings Summary */}
