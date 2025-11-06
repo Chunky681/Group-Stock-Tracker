@@ -51,7 +51,6 @@ export const fetchStockDataFromSheet = async (forceRefresh = false) => {
   }
 
   // Fetch fresh data
-  // Note: readRequestCount is now tracked in googleSheets.js readSheetData function
   try {
     const data = await readSheetData('Sheet2!A1:Q1000'); // Updated to Q to include Dividend Yield column
     

@@ -8,7 +8,7 @@ import AddRealEstateForm from './components/AddRealEstateForm';
 import UserSelector from './components/UserSelector';
 import UserHoldings from './components/UserHoldings';
 import Analytics from './components/Analytics';
-import ReadCounter from './components/ReadCounter';
+import RefreshTimer from './components/RefreshTimer';
 
 function App() {
   const [selectedStock, setSelectedStock] = useState(null);
@@ -58,9 +58,14 @@ function App() {
     }
   }, [addType]);
 
+  const handleRefresh = async () => {
+    // Increment portfolioKey to trigger refresh in Analytics
+    setPortfolioKey(prev => prev + 1);
+  };
+
   return (
     <div className="min-h-screen">
-      <ReadCounter />
+      <RefreshTimer onRefresh={handleRefresh} intervalSeconds={60} />
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: -20 }}

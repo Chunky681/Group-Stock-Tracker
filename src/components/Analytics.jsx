@@ -191,42 +191,52 @@ const Analytics = ({ refreshKey }) => {
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [historyData, setHistoryData] = useState([]);
   const [holdingsHistory, setHoldingsHistory] = useState([]);
+  const [usersFromSheet1, setUsersFromSheet1] = useState([]); // Store unique users from Sheet1
   const [timePeriod, setTimePeriod] = useState('1D'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
   const [postingUser, setPostingUser] = useState('');
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
-
   useEffect(() => {
+    // Determine if this is the initial load (refreshKey === 0)
+    const isInitialLoad = refreshKey === 0;
+    
+    // If it's a refresh (not initial load), use silent mode with force refresh
+    const silent = !isInitialLoad;
+    const forceRefresh = !isInitialLoad;
+    
+    // Ensure loading state is set correctly
+    if (isInitialLoad) {
+      // Initial load: show loading spinner
+      setIsLoading(true);
+      setError(null);
+    } else {
+      // Refresh: ensure we're not stuck in loading state
+      // (component may have remounted with refreshKey > 0 but isLoading was still true)
+      setIsLoading(false);
+    }
+    
     // Load all data in parallel for better performance
     Promise.all([
-      loadPortfolio(),
-      loadHistoryData(),
-      loadHoldingsHistory()
+      loadPortfolio(forceRefresh, silent),
+      loadHistoryData(forceRefresh),
+      loadHoldingsHistory(forceRefresh)
     ]).catch(error => {
       console.error('Error loading analytics data:', error);
-      setError(error.message || 'Failed to load analytics data.');
+      if (!silent) {
+        setError(error.message || 'Failed to load analytics data.');
+      }
+      // Always clear loading state on error, even for silent refreshes
+      setIsLoading(false);
+    }).finally(() => {
+      // Always clear loading state when data loading completes
+      // This ensures we never get stuck in loading state
+      setIsLoading(false);
     });
-  }, [refreshKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]); // Only depend on refreshKey - load functions are stable
 
-  // Auto-refresh data every minute while user is on the page (especially for chats)
-  // This happens silently in the background without disrupting the user experience
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      console.log('Auto-refreshing analytics data silently (1 minute interval)...');
-      // Refresh all data silently - no loading states, no error messages, just update data
-      Promise.all([
-        loadPortfolio(true, true), // Force refresh + silent mode
-        loadHistoryData(true), // Force refresh
-        loadHoldingsHistory(true) // Force refresh to bypass cache and get latest chats
-      ]).catch(error => {
-        console.error('Error auto-refreshing analytics data:', error);
-        // Silently fail - don't disrupt user experience
-      });
-    }, 60000); // 60 seconds = 1 minute
-
-    // Cleanup interval on unmount
-    return () => clearInterval(intervalId);
-  }, []); // Empty dependency array - only run once on mount
+  // Auto-refresh is now handled by RefreshTimer component in App.jsx
+  // This removes the duplicate refresh mechanism
 
   // Load holdings history from HoldingsHistory sheet (including chat data from column E)
   const loadHoldingsHistory = async (forceRefresh = false) => {
@@ -371,8 +381,11 @@ const Analytics = ({ refreshKey }) => {
       
       const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
       
-      // Get unique users and set them all as selected by default
-      const uniqueUsers = [...new Set(rows.map(row => row[0]?.trim()).filter(Boolean))];
+      // Get unique users from Sheet1 and store them in state
+      const uniqueUsers = [...new Set(rows.map(row => row[0]?.trim()).filter(Boolean))].sort();
+      setUsersFromSheet1(uniqueUsers);
+      
+      // Set them all as selected by default if no users are currently selected
       if (selectedUsers.size === 0) {
         setSelectedUsers(new Set(uniqueUsers));
       }
@@ -383,7 +396,7 @@ const Analytics = ({ refreshKey }) => {
       // Pre-fetch Sheet2 data once before looping through tickers
       // This ensures we only make one API call to Sheet2 instead of one per ticker
       const { fetchStockDataFromSheet } = await import('../utils/stockDataSheet');
-      const allStocks = await fetchStockDataFromSheet(); // This will use cache if available
+      const allStocks = await fetchStockDataFromSheet(forceRefresh); // Force refresh if requested
       
       // Create a lookup map from stocks array for faster access
       const stockLookup = new Map();
@@ -507,6 +520,7 @@ const Analytics = ({ refreshKey }) => {
       console.error('Error loading portfolio:', error);
       if (!silent) {
         setError(error.message || 'Failed to load portfolio.');
+        setIsLoading(false); // Always set loading to false on error
       }
     } finally {
       if (!silent) {
@@ -540,13 +554,10 @@ const Analytics = ({ refreshKey }) => {
     });
   };
 
-  // Get all unique users from both portfolio and holdings history
+  // Get all unique users from Sheet1
   const allUsers = useMemo(() => {
-    const portfolioUsers = portfolio.map(item => item.username).filter(Boolean);
-    const historyUsers = holdingsHistory.map(item => item.username).filter(Boolean);
-    const allUniqueUsers = [...new Set([...portfolioUsers, ...historyUsers])];
-    return allUniqueUsers.sort();
-  }, [portfolio, holdingsHistory]);
+    return usersFromSheet1;
+  }, [usersFromSheet1]);
 
   // Toggle user selection
   const toggleUser = (username) => {
@@ -2370,7 +2381,8 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
     }
     
     // Add position change markers to chart data
-    const merged = [...chartData];
+    // Create a new array with new objects to avoid mutating read-only data
+    const merged = chartData.map(point => ({ ...point }));
     positionChanges.forEach(change => {
       // Find if there's already a data point at this timestamp (within 1 minute)
       const existingIndex = merged.findIndex(point => 
@@ -2378,8 +2390,11 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
       );
       
       if (existingIndex >= 0) {
-        // Mark existing point as having a position change
-        merged[existingIndex].positionChange = change;
+        // Create a new object with the position change property added
+        merged[existingIndex] = {
+          ...merged[existingIndex],
+          positionChange: change
+        };
       } else {
         // Add a new data point for the position change
         merged.push({
