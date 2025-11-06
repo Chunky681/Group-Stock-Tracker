@@ -191,7 +191,7 @@ const Analytics = ({ refreshKey }) => {
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [historyData, setHistoryData] = useState([]);
   const [holdingsHistory, setHoldingsHistory] = useState([]);
-  const [timePeriod, setTimePeriod] = useState('ALL'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
+  const [timePeriod, setTimePeriod] = useState('1D'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
   const [postingUser, setPostingUser] = useState('');
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding

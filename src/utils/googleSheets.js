@@ -27,9 +27,9 @@ export const clearSheetCache = (range = null) => {
   }
 };
 
-// Helper function to format date for HoldingsHistory column A
+// Helper function to format date for HoldingsHistory and Sheet1 timestamp columns
 // Format: YYYY-MM-DDTHH:mm:ss-HH:MM (e.g., 2025-11-02T20:30:00-05:00)
-const formatHoldingsHistoryDate = (date = new Date()) => {
+export const formatHoldingsHistoryDate = (date = new Date()) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');

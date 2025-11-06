@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Edit2, Save, X, TrendingUp, DollarSign, RefreshCw, Plus, Trash2, Home } from 'lucide-react';
-import { readSheetData, updateRow, initializeSheet, deleteRow } from '../utils/googleSheets';
+import { readSheetData, updateRow, initializeSheet, deleteRow, formatHoldingsHistoryDate } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
 const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
@@ -256,7 +256,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
         selectedUser.trim(),
         editingTicker,
         sharesNum.toString(),
-        new Date().toISOString(),
+        formatHoldingsHistoryDate(),
       ];
       
       await updateRow(rowIndex, rowData);

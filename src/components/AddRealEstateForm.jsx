@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Home, Loader, CheckCircle2, AlertCircle } from 'lucide-react';
-import { appendRow, readSheetData, initializeSheet } from '../utils/googleSheets';
+import { appendRow, readSheetData, initializeSheet, formatHoldingsHistoryDate } from '../utils/googleSheets';
 
 const AddRealEstateForm = ({ selectedUser, onSuccess, refreshKey }) => {
   const [value, setValue] = useState('');
@@ -36,7 +36,7 @@ const AddRealEstateForm = ({ selectedUser, onSuccess, refreshKey }) => {
         selectedUser.trim(),
         'REAL ESTATE',
         valueNum.toString(),
-        new Date().toISOString(),
+        formatHoldingsHistoryDate(),
       ];
 
       console.log('Attempting to add real estate to Google Sheets...');

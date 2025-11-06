@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Loader, CheckCircle2, AlertCircle } from 'lucide-react';
-import { appendRow, readSheetData, initializeSheet } from '../utils/googleSheets';
+import { appendRow, readSheetData, initializeSheet, formatHoldingsHistoryDate } from '../utils/googleSheets';
 
 const AddStockForm = ({ stockData, selectedUser, onSuccess, refreshKey }) => {
   const [shares, setShares] = useState('');
@@ -39,7 +39,7 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess, refreshKey }) => {
         selectedUser.trim(),
         stockData.symbol,
         sharesNum.toString(),
-        new Date().toISOString(),
+        formatHoldingsHistoryDate(),
       ];
 
       console.log('Attempting to add stock to Google Sheets...');
@@ -218,7 +218,7 @@ const AddStockForm = ({ stockData, selectedUser, onSuccess, refreshKey }) => {
             transition={{ delay: 0.3 }}
             className="text-xs text-slate-400 mt-1"
           >
-            Selected stock: <span className="font-semibold text-primary-400">{stockData.symbol}</span> at ${stockData.price.toFixed(2)} per share
+            Selected stock: <span className="font-semibold text-primary-400">{stockData.visualSymbol || stockData.symbol}</span> at ${stockData.price.toFixed(2)} per share
           </motion.p>
         </motion.div>
 

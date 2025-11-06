@@ -347,7 +347,7 @@ const StockSearch = ({ onStockSelected }) => {
                   transition={{ delay: 0.2 }}
                   className="text-2xl font-bold text-white"
                 >
-                  {stockData.symbol}
+                  {stockData.visualSymbol || stockData.symbol}
                 </motion.h3>
                 <motion.p
                   initial={{ opacity: 0, x: -10 }}

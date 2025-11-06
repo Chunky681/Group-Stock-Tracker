@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DollarSign, Loader, CheckCircle2, AlertCircle } from 'lucide-react';
-import { appendRow, readSheetData, initializeSheet } from '../utils/googleSheets';
+import { appendRow, readSheetData, initializeSheet, formatHoldingsHistoryDate } from '../utils/googleSheets';
 
 const AddCashForm = ({ selectedUser, onSuccess, refreshKey }) => {
   const [amount, setAmount] = useState('');
@@ -36,7 +36,7 @@ const AddCashForm = ({ selectedUser, onSuccess, refreshKey }) => {
         selectedUser.trim(),
         'CASH',
         amountNum.toString(),
-        new Date().toISOString(),
+        formatHoldingsHistoryDate(),
       ];
 
       console.log('Attempting to add cash to Google Sheets...');

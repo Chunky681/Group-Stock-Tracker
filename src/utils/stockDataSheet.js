@@ -1,5 +1,5 @@
 // Stock Data from Google Sheets (Sheet2)
-// Uses Visual Symbol column for all lookups and display
+// Uses Visual Symbol column for lookups and display, but saves Symbol column value to Sheet1
 import { readSheetData, appendRowToSheet2, appendRowToSheet2SymbolOnly, deleteRowFromSheet2 } from './googleSheets';
 // Note: Read tracking is now handled in googleSheets.js
 
@@ -130,13 +130,16 @@ export const searchStocksFromSheet = async (query) => {
              name.includes(searchQuery);
     })
     .map(stock => {
-      // Use Visual Symbol if available, otherwise use Symbol
+      // Use Symbol from Sheet2 (e.g., "BATS:FETH") for saving to Sheet1
+      // Fallback to Visual Symbol if Symbol column is empty
+      const symbolToSave = stock.symbol || stock.visualSymbol;
+      // Keep Visual Symbol for display purposes
       const displaySymbol = stock.visualSymbol || stock.symbol;
       return {
-        symbol: displaySymbol, // Use Visual Symbol if available, otherwise Symbol
+        symbol: symbolToSave, // Use Symbol from Sheet2 for saving to Sheet1
         name: stock.name || displaySymbol,
         exchange: stock.currency || 'USD',
-        visualSymbol: stock.visualSymbol || stock.symbol, // Use Symbol if Visual Symbol is empty
+        visualSymbol: displaySymbol, // Use Visual Symbol for display
       };
     })
     .slice(0, 10);
@@ -161,12 +164,15 @@ export const getStockQuoteFromSheet = async (visualSymbolOrSymbol) => {
   // Calculate previous close from price and change
   const previousClose = stock.price - stock.changeDollar;
 
-  // Use Visual Symbol if available, otherwise use Symbol
+  // Use Symbol from Sheet2 (e.g., "BATS:FETH") for saving to Sheet1
+  // Fallback to Visual Symbol if Symbol column is empty
+  const symbolToSave = stock.symbol || stock.visualSymbol;
+  // Keep Visual Symbol for display purposes
   const displaySymbol = stock.visualSymbol || stock.symbol;
 
   return {
-    symbol: displaySymbol, // Use Visual Symbol if available, otherwise Symbol
-    visualSymbol: stock.visualSymbol || stock.symbol, // Use Symbol if Visual Symbol is empty
+    symbol: symbolToSave, // Use Symbol from Sheet2 for saving to Sheet1
+    visualSymbol: displaySymbol, // Use Visual Symbol for display
     name: stock.name,
     price: stock.price,
     previousClose: previousClose,
