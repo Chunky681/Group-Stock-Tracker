@@ -18,21 +18,33 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
 
   useEffect(() => {
     if (selectedUser) {
-      loadHoldings();
+      const isInitialLoad = refreshKey === 0;
+      const forceRefresh = !isInitialLoad;
+      const silent = !isInitialLoad;
+      
+      if (isInitialLoad) {
+        setIsLoading(true);
+        setError(null);
+      }
+      
+      loadHoldings(forceRefresh, silent);
     } else {
       setHoldings([]);
       setSheetData([]);
+      setIsLoading(false);
     }
   }, [selectedUser, refreshKey]); // Add refreshKey to dependencies
 
-  const loadHoldings = async () => {
+  const loadHoldings = async (forceRefresh = false, silent = false) => {
     if (!selectedUser) return;
     
-    setIsLoading(true);
-    setError(null);
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       await initializeSheet();
-      const data = await readSheetData();
+      const data = await readSheetData(undefined, forceRefresh);
       setSheetData(data); // Store raw data for finding row indices
       
       const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
@@ -132,7 +144,9 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       setHoldings(holdingsArray);
     } catch (error) {
       console.error('Error loading holdings:', error);
-      setError(error.message || 'Failed to load holdings');
+      if (!silent) {
+        setError(error.message || 'Failed to load holdings');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -216,7 +230,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       if (onUpdate) {
         onUpdate();
       }
-      await loadHoldings();
+      await loadHoldings(true, false); // Force refresh after deletion, not silent
       
     } catch (error) {
       console.error('Error deleting holding:', error);
@@ -280,7 +294,7 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       if (onUpdate) {
         onUpdate();
       }
-      await loadHoldings();
+      await loadHoldings(true, false); // Force refresh after save, not silent
       
     } catch (error) {
       console.error('Error saving edit:', error);

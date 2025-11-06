@@ -13,14 +13,25 @@ const UserSelector = ({ selectedUser, onUserSelect, refreshKey, compact = false 
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadUsers();
+    const isInitialLoad = refreshKey === 0;
+    const forceRefresh = !isInitialLoad;
+    const silent = !isInitialLoad;
+    
+    if (isInitialLoad) {
+      setIsLoading(true);
+      setError(null);
+    }
+    
+    loadUsers(forceRefresh, silent);
   }, [refreshKey]);
 
-  const loadUsers = async () => {
-    setIsLoading(true);
-    setError(null);
+  const loadUsers = async (forceRefresh = false, silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
-      const data = await readSheetData();
+      const data = await readSheetData(undefined, forceRefresh);
       const rows = data.slice(1).filter(row => row && row.length >= 3 && row[0] && row[1]);
       
       // Get unique tickers to fetch prices
@@ -81,7 +92,9 @@ const UserSelector = ({ selectedUser, onUserSelect, refreshKey, compact = false 
       setUsers(userList);
     } catch (error) {
       console.error('Error loading users:', error);
-      setError(error.message || 'Failed to load users');
+      if (!silent) {
+        setError(error.message || 'Failed to load users');
+      }
     } finally {
       setIsLoading(false);
     }

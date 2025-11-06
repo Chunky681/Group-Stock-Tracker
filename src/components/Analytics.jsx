@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell, Coins, Building2, ArrowUp, ArrowDown } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis, ReferenceDot } from 'recharts';
@@ -28,9 +28,167 @@ const STOCK_COLORS = [
   '#06b6d4', // cyan
   '#f59e0b', // amber (yellow-gold)
   '#a855f7', // purple
-  '#3b82f6', // blue
-  '#ef4444', // red
 ];
+
+// Memoized User Distribution Chart Component
+const UserDistributionChart = memo(({ data, renderLabel, CustomTooltip }) => {
+  return (
+    <div className="flex flex-col">
+      <h4 className="text-lg font-semibold text-white mb-1 text-center">By User</h4>
+      <div className="flex-shrink-0" style={{ height: '384px' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={renderLabel}
+              outerRadius={100}
+              innerRadius={0}
+              startAngle={90}
+              endAngle={-270}
+              paddingAngle={0}
+              stroke="none"
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {data.map((entry, index) => (
+                <Cell key={`user-cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
+              ))}
+            </Pie>
+            <Tooltip content={CustomTooltip} />
+          </RechartsPieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex-grow pt-1">
+        <div className="flex flex-wrap justify-center gap-4">
+          {data.map((entry, index) => (
+            <div key={`legend-${index}`} className="flex items-center gap-2">
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: COLORS[index % COLORS.length] }}
+              />
+              <span className="text-sm text-slate-300">{entry.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+UserDistributionChart.displayName = 'UserDistributionChart';
+
+// Custom comparison function for UserDistributionChart
+const areUserChartPropsEqual = (prevProps, nextProps) => {
+  // Compare data arrays by reference (they're already stable from useRef)
+  if (prevProps.data !== nextProps.data) return false;
+  // renderLabel is memoized, so reference should be stable
+  if (prevProps.renderLabel !== nextProps.renderLabel) return false;
+  // CustomTooltip is a component, should be stable
+  return true;
+};
+
+const MemoizedUserDistributionChart = memo(UserDistributionChart, areUserChartPropsEqual);
+
+// Memoized Stock Distribution Chart Component
+const StockDistributionChart = memo(({ data, renderLabel, CustomTooltip }) => {
+  return (
+    <div className="flex flex-col">
+      <h4 className="text-lg font-semibold text-white mb-1 text-center">By Stock</h4>
+      <div className="flex-shrink-0" style={{ height: '384px' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={renderLabel}
+              outerRadius={100}
+              innerRadius={0}
+              startAngle={90}
+              endAngle={-270}
+              paddingAngle={0}
+              stroke="none"
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {data.map((entry, index) => {
+                // Always use green for Cash, ochre for Real Estate
+                const isCash = entry.name === 'CASH';
+                const isRealEstate = entry.name === 'REAL ESTATE';
+                let fillColor;
+                if (isCash) {
+                  fillColor = '#22c55e'; // green
+                } else if (isRealEstate) {
+                  fillColor = '#CC7722'; // ochre
+                } else {
+                  // For other stocks, use STOCK_COLORS (excluding green, ochre, and orange)
+                  // Calculate index excluding CASH and REAL ESTATE
+                  const otherStocksIndex = data
+                    .slice(0, index)
+                    .filter(e => e.name !== 'CASH' && e.name !== 'REAL ESTATE').length;
+                  fillColor = STOCK_COLORS[otherStocksIndex % STOCK_COLORS.length];
+                }
+                return (
+                  <Cell key={`stock-cell-${index}`} fill={fillColor} stroke="none" />
+                );
+              })}
+            </Pie>
+            <Tooltip content={CustomTooltip} />
+          </RechartsPieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex-grow pt-1">
+        <div className="flex flex-wrap justify-center gap-4">
+          {data.map((entry, index) => {
+            // Always use green for Cash, ochre for Real Estate
+            const isCash = entry.name === 'CASH';
+            const isRealEstate = entry.name === 'REAL ESTATE';
+            let color;
+            if (isCash) {
+              color = '#22c55e'; // green
+            } else if (isRealEstate) {
+              color = '#CC7722'; // ochre
+            } else {
+              // For other stocks, use STOCK_COLORS (excluding green, ochre, and orange)
+              // Calculate index excluding CASH and REAL ESTATE
+              const otherStocksIndex = data
+                .slice(0, index)
+                .filter(e => e.name !== 'CASH' && e.name !== 'REAL ESTATE').length;
+              color = STOCK_COLORS[otherStocksIndex % STOCK_COLORS.length];
+            }
+            return (
+              <div key={`legend-${index}`} className="flex items-center gap-2">
+                <div 
+                  className="w-3 h-3 rounded-full" 
+                  style={{ backgroundColor: color }}
+                />
+                <span className="text-sm text-slate-300">{entry.name}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+StockDistributionChart.displayName = 'StockDistributionChart';
+
+// Custom comparison function for StockDistributionChart
+const areStockChartPropsEqual = (prevProps, nextProps) => {
+  // Compare data arrays by reference (they're already stable from useRef)
+  if (prevProps.data !== nextProps.data) return false;
+  // renderLabel is memoized, so reference should be stable
+  if (prevProps.renderLabel !== nextProps.renderLabel) return false;
+  // CustomTooltip is a component, should be stable
+  return true;
+};
+
+const MemoizedStockDistributionChart = memo(StockDistributionChart, areStockChartPropsEqual);
 
 // Cash Particles Animation Component
 const CashParticlesAnimation = ({ trigger, distribution }) => {
@@ -196,6 +354,7 @@ const Analytics = ({ refreshKey }) => {
   const [postingUser, setPostingUser] = useState('');
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
+  const holdingRefs = useRef(new Map()); // Store refs for each holding section to enable scrolling
   useEffect(() => {
     // Determine if this is the initial load (refreshKey === 0)
     const isInitialLoad = refreshKey === 0;
@@ -549,6 +708,18 @@ const Analytics = ({ refreshKey }) => {
           ...prev,
           [ticker]: Date.now()
         }));
+        
+        // Scroll to center the expanded section after a short delay to allow DOM update
+        setTimeout(() => {
+          const ref = holdingRefs.current.get(ticker);
+          if (ref) {
+            ref.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'center',
+              inline: 'nearest'
+            });
+          }
+        }, 100);
       }
       return newSet;
     });
@@ -614,7 +785,10 @@ const Analytics = ({ refreshKey }) => {
     return Object.values(grouped).sort((a, b) => b.totalValue - a.totalValue);
   }, [filteredPortfolio]);
 
-  // Data for total value pie chart (by user)
+  // Data for total value pie chart (by user) - with stable reference to prevent unnecessary re-renders
+  const totalValueByUserRef = useRef([]);
+  const totalValueByUserKeyRef = useRef('');
+  
   const totalValueByUser = useMemo(() => {
     const userTotals = {};
     filteredPortfolio.forEach(item => {
@@ -624,15 +798,29 @@ const Analytics = ({ refreshKey }) => {
       userTotals[item.username] += item.value;
     });
     
-    return Object.entries(userTotals)
+    const newData = Object.entries(userTotals)
       .map(([username, value]) => ({
         name: username,
         value: Number(value.toFixed(2)),
       }))
       .sort((a, b) => b.value - a.value);
+    
+    // Compare with previous data using JSON string
+    const newKey = JSON.stringify(newData.map(d => ({ name: d.name, value: d.value })));
+    
+    // Only update if data actually changed
+    if (newKey !== totalValueByUserKeyRef.current) {
+      totalValueByUserKeyRef.current = newKey;
+      totalValueByUserRef.current = newData;
+    }
+    
+    return totalValueByUserRef.current;
   }, [filteredPortfolio]);
 
-  // Data for stock distribution pie chart (by stock across all selected users, including cash)
+  // Data for stock distribution pie chart (by stock across all selected users, including cash) - with stable reference
+  const totalValueByStockRef = useRef([]);
+  const totalValueByStockKeyRef = useRef('');
+  
   const totalValueByStock = useMemo(() => {
     const stockTotals = {};
     filteredPortfolio.forEach(item => {
@@ -642,7 +830,7 @@ const Analytics = ({ refreshKey }) => {
       stockTotals[item.ticker] += item.value;
     });
     
-    return Object.entries(stockTotals)
+    const newData = Object.entries(stockTotals)
       .map(([ticker, value]) => ({
         name: ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker === 'REAL ESTATE' ? 'REAL ESTATE' : ticker,
         value: Number(value.toFixed(2)),
@@ -657,27 +845,59 @@ const Analytics = ({ refreshKey }) => {
         // Everything else sorted by value (descending)
         return b.value - a.value;
       });
+    
+    // Compare with previous data using JSON string
+    const newKey = JSON.stringify(newData.map(d => ({ name: d.name, value: d.value })));
+    
+    // Only update if data actually changed
+    if (newKey !== totalValueByStockKeyRef.current) {
+      totalValueByStockKeyRef.current = newKey;
+      totalValueByStockRef.current = newData;
+    }
+    
+    return totalValueByStockRef.current;
   }, [filteredPortfolio]);
 
-  // Data for pie chart by stock (for each stock, show user distribution)
-  const getStockDistribution = (ticker) => {
-    const stockItems = filteredPortfolio.filter(item => item.ticker === ticker);
-    const userTotals = {};
-    
-    stockItems.forEach(item => {
-      if (!userTotals[item.username]) {
-        userTotals[item.username] = 0;
+  // Cache for stock distributions with stable references
+  const stockDistributionCacheRef = useRef(new Map());
+  const stockDistributionKeyCacheRef = useRef(new Map());
+
+  // Data for pie chart by stock (for each stock, show user distribution) - with stable references
+  const getStockDistribution = useMemo(() => {
+    return (ticker) => {
+      const stockItems = filteredPortfolio.filter(item => item.ticker === ticker);
+      const userTotals = {};
+      
+      stockItems.forEach(item => {
+        if (!userTotals[item.username]) {
+          userTotals[item.username] = 0;
+        }
+        userTotals[item.username] += item.value;
+      });
+      
+      const newData = Object.entries(userTotals)
+        .map(([username, value]) => ({
+          name: username,
+          value: Number(value.toFixed(2)),
+        }))
+        .sort((a, b) => b.value - a.value);
+      
+      // Create key for comparison
+      const newKey = JSON.stringify(newData.map(d => ({ name: d.name, value: d.value })));
+      
+      // Check if we have a cached version for this ticker
+      const cachedKey = stockDistributionKeyCacheRef.current.get(ticker);
+      
+      // Only update if data actually changed
+      if (cachedKey !== newKey) {
+        stockDistributionKeyCacheRef.current.set(ticker, newKey);
+        stockDistributionCacheRef.current.set(ticker, newData);
       }
-      userTotals[item.username] += item.value;
-    });
-    
-    return Object.entries(userTotals)
-      .map(([username, value]) => ({
-        name: username,
-        value: Number(value.toFixed(2)),
-      }))
-      .sort((a, b) => b.value - a.value);
-  };
+      
+      // Return cached version (stable reference) or new data if ticker not in cache
+      return stockDistributionCacheRef.current.get(ticker) || newData;
+    };
+  }, [filteredPortfolio]);
 
   // Get all chat messages from all records for a username and ticker combination
   const getChatsForTicker = (ticker, username) => {
@@ -832,32 +1052,35 @@ const Analytics = ({ refreshKey }) => {
     return null;
   };
 
-  const renderLabel = (entry) => {
-    // Recharts passes an object with name, value, percent, etc.
-    if (!entry || !entry.name) return '';
-    
-    const name = entry.name;
-    const value = entry.value;
-    // Recharts provides percent as a decimal (0.041 = 4.1%)
-    const percent = entry.percent;
-    
-    // Use percent directly if available (Recharts calculates this automatically)
-    // If percent is not available, calculate it from totalValue as fallback
-    let percentValue = percent;
-    if (percentValue === undefined || percentValue === null || isNaN(percentValue)) {
-      if (totalValue > 0 && value) {
-        percentValue = value / totalValue;
-      } else {
-        percentValue = 0;
+  // Memoize renderLabel to prevent unnecessary re-renders of pie chart labels
+  const renderLabel = useMemo(() => {
+    return (entry) => {
+      // Recharts passes an object with name, value, percent, etc.
+      if (!entry || !entry.name) return '';
+      
+      const name = entry.name;
+      const value = entry.value;
+      // Recharts provides percent as a decimal (0.041 = 4.1%)
+      const percent = entry.percent;
+      
+      // Use percent directly if available (Recharts calculates this automatically)
+      // If percent is not available, calculate it from totalValue as fallback
+      let percentValue = percent;
+      if (percentValue === undefined || percentValue === null || isNaN(percentValue)) {
+        if (totalValue > 0 && value) {
+          percentValue = value / totalValue;
+        } else {
+          percentValue = 0;
+        }
       }
-    }
-    
-    // Hide label if percentage is less than 4% (0.04)
-    if (percentValue < 0.04) {
-      return '';
-    }
-    return `${name}: ${(percentValue * 100).toFixed(1)}%`;
-  };
+      
+      // Hide label if percentage is less than 4% (0.04)
+      if (percentValue < 0.04) {
+        return '';
+      }
+      return `${name}: ${(percentValue * 100).toFixed(1)}%`;
+    };
+  }, [totalValue]);
 
   if (isLoading) {
     return (
@@ -1086,129 +1309,19 @@ const Analytics = ({ refreshKey }) => {
           </div>
           <div className="grid md:grid-cols-2 gap-6">
             {/* User Distribution Pie Chart */}
-            <div className="flex flex-col">
-              <h4 className="text-lg font-semibold text-white mb-1 text-center">By User</h4>
-              <div className="flex-shrink-0" style={{ height: '384px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
-                    <Pie
-                      data={totalValueByUser}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={renderLabel}
-                      outerRadius={100}
-                      innerRadius={0}
-                      startAngle={90}
-                      endAngle={-270}
-                      paddingAngle={0}
-                      stroke="none"
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {totalValueByUser.map((entry, index) => (
-                        <Cell key={`user-cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<CustomTooltip />} />
-                  </RechartsPieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-grow pt-1">
-                <div className="flex flex-wrap justify-center gap-4">
-                  {totalValueByUser.map((entry, index) => (
-                    <div key={`legend-${index}`} className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      />
-                      <span className="text-sm text-slate-300">{entry.name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <MemoizedUserDistributionChart 
+              data={totalValueByUser}
+              renderLabel={renderLabel}
+              CustomTooltip={CustomTooltip}
+            />
 
             {/* Stock Distribution Pie Chart */}
             {totalValueByStock.length > 0 && (
-              <div className="flex flex-col">
-                <h4 className="text-lg font-semibold text-white mb-1 text-center">By Stock</h4>
-                <div className="flex-shrink-0" style={{ height: '384px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
-                      <Pie
-                        data={totalValueByStock}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={renderLabel}
-                        outerRadius={100}
-                        innerRadius={0}
-                        startAngle={90}
-                        endAngle={-270}
-                        paddingAngle={0}
-                        stroke="none"
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {totalValueByStock.map((entry, index) => {
-                          // Always use green for Cash, ochre for Real Estate
-                          const isCash = entry.name === 'CASH';
-                          const isRealEstate = entry.name === 'REAL ESTATE';
-                          let fillColor;
-                          if (isCash) {
-                            fillColor = '#22c55e'; // green
-                          } else if (isRealEstate) {
-                            fillColor = '#CC7722'; // ochre
-                          } else {
-                            // For other stocks, use STOCK_COLORS (excluding green, ochre, and orange)
-                            // Calculate index excluding CASH and REAL ESTATE
-                            const otherStocksIndex = totalValueByStock
-                              .slice(0, index)
-                              .filter(e => e.name !== 'CASH' && e.name !== 'REAL ESTATE').length;
-                            fillColor = STOCK_COLORS[otherStocksIndex % STOCK_COLORS.length];
-                          }
-                          return (
-                            <Cell key={`stock-cell-${index}`} fill={fillColor} stroke="none" />
-                          );
-                        })}
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </RechartsPieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex-grow pt-1">
-                  <div className="flex flex-wrap justify-center gap-4">
-                    {totalValueByStock.map((entry, index) => {
-                      // Always use green for Cash, ochre for Real Estate
-                      const isCash = entry.name === 'CASH';
-                      const isRealEstate = entry.name === 'REAL ESTATE';
-                      let color;
-                      if (isCash) {
-                        color = '#22c55e'; // green
-                      } else if (isRealEstate) {
-                        color = '#CC7722'; // ochre
-                      } else {
-                        // For other stocks, use STOCK_COLORS (excluding green, ochre, and orange)
-                        // Calculate index excluding CASH and REAL ESTATE
-                        const otherStocksIndex = totalValueByStock
-                          .slice(0, index)
-                          .filter(e => e.name !== 'CASH' && e.name !== 'REAL ESTATE').length;
-                        color = STOCK_COLORS[otherStocksIndex % STOCK_COLORS.length];
-                      }
-                      return (
-                        <div key={`legend-${index}`} className="flex items-center gap-2">
-                          <div 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ backgroundColor: color }}
-                          />
-                          <span className={`text-sm ${isCash ? 'text-green-400' : isRealEstate ? 'text-amber-600' : 'text-slate-300'}`} style={isRealEstate ? { color: '#CC7722' } : {}}>{entry.name}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+              <MemoizedStockDistributionChart 
+                data={totalValueByStock}
+                renderLabel={renderLabel}
+                CustomTooltip={CustomTooltip}
+              />
             )}
           </div>
         </motion.div>
@@ -1236,12 +1349,21 @@ const Analytics = ({ refreshKey }) => {
             
             return sortedHoldings.map((stock, stockIndex) => {
               const distribution = getStockDistribution(stock.ticker);
+              // Get stable key for this distribution from cache
+              const distributionKey = stockDistributionKeyCacheRef.current.get(stock.ticker) || '';
               
               // Special rendering for CASH
               if (stock.isCash) {
                 const isExpanded = expandedHoldings.has(stock.ticker);
+                // Create or get ref for this holding
+                if (!holdingRefs.current.has(stock.ticker)) {
+                  holdingRefs.current.set(stock.ticker, null);
+                }
                 return (
                   <motion.div
+                    ref={(el) => {
+                      if (el) holdingRefs.current.set(stock.ticker, el);
+                    }}
                     key={stock.ticker}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1292,19 +1414,14 @@ const Analytics = ({ refreshKey }) => {
                               Distribution by User
                             </h5>
                             <div className="flex-shrink-0" style={{ height: '256px' }}>
-                              <ResponsiveContainer width="100%" height="100%">
+                              <ResponsiveContainer width="100%" height="100%" key={`cash-pie-${distributionKey}`}>
                                 <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                                   <Pie
                                     data={distribution}
                                     cx="50%"
                                     cy="50%"
                                     labelLine={false}
-                                    label={({ name, value, percent }) => {
-                                      if (percent < 0.04) {
-                                        return '';
-                                      }
-                                      return `${name}: ${(percent * 100).toFixed(1)}%`;
-                                    }}
+                                    label={renderLabel}
                                     outerRadius={80}
                                     innerRadius={0}
                                     startAngle={90}
@@ -1369,8 +1486,15 @@ const Analytics = ({ refreshKey }) => {
               // Special rendering for REAL ESTATE
               if (stock.isRealEstate) {
                 const isExpanded = expandedHoldings.has(stock.ticker);
+                // Create or get ref for this holding
+                if (!holdingRefs.current.has(stock.ticker)) {
+                  holdingRefs.current.set(stock.ticker, null);
+                }
                 return (
                   <motion.div
+                    ref={(el) => {
+                      if (el) holdingRefs.current.set(stock.ticker, el);
+                    }}
                     key={stock.ticker}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1427,20 +1551,20 @@ const Analytics = ({ refreshKey }) => {
                                   Distribution by User
                                 </h5>
                                 <div className="flex-shrink-0" style={{ height: '256px' }}>
-                              <ResponsiveContainer width="100%" height="100%">
+                              <ResponsiveContainer width="100%" height="100%" key={`re-pie-${distributionKey}`}>
                                 <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                                   <Pie
                                     data={distribution}
                                     cx="50%"
                                     cy="50%"
                                     labelLine={false}
-                                    label={({ name, value, percent }) => {
-                                      if (percent < 0.04) {
-                                        return '';
-                                      }
-                                      return `${name}: ${(percent * 100).toFixed(0)}%`;
-                                    }}
+                                    label={renderLabel}
                                     outerRadius={80}
+                                    innerRadius={0}
+                                    startAngle={90}
+                                    endAngle={-270}
+                                    paddingAngle={0}
+                                    stroke="none"
                                     fill="#8884d8"
                                     dataKey="value"
                                   >
@@ -1456,7 +1580,7 @@ const Analytics = ({ refreshKey }) => {
                                   <Tooltip content={<CustomTooltip />} />
                                 </RechartsPieChart>
                               </ResponsiveContainer>
-                            </div>
+                                </div>
                             <div className="flex-grow pt-1">
                               <div className="flex flex-wrap justify-center gap-4">
                                 {distribution.map((entry, index) => {
@@ -1510,8 +1634,15 @@ const Analytics = ({ refreshKey }) => {
               
               // Regular stock rendering
               const isExpanded = expandedHoldings.has(stock.ticker);
+              // Create or get ref for this holding
+              if (!holdingRefs.current.has(stock.ticker)) {
+                holdingRefs.current.set(stock.ticker, null);
+              }
               return (
                 <motion.div
+                  ref={(el) => {
+                    if (el) holdingRefs.current.set(stock.ticker, el);
+                  }}
                   key={stock.ticker}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -1749,20 +1880,14 @@ const Analytics = ({ refreshKey }) => {
                           Distribution by User
                         </h5>
                         <div className="flex-shrink-0" style={{ height: '256px' }}>
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height="100%" key={`stock-pie-${stock.ticker}-${distributionKey}`}>
                             <RechartsPieChart margin={{ top: 0, right: 20, bottom: 0, left: 20 }}>
                               <Pie
                                 data={distribution}
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
-                                label={({ name, value, percent }) => {
-                                  // Hide label if percentage is less than 4%
-                                  if (percent < 0.04) {
-                                    return '';
-                                  }
-                                  return `${name}: ${(percent * 100).toFixed(1)}%`;
-                                }}
+                                label={renderLabel}
                                 outerRadius={80}
                                 innerRadius={0}
                                 startAngle={90}
@@ -1915,7 +2040,8 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
         
         switch (timePeriod) {
           case '1D':
-            startDate.setDate(now.getDate() - 1);
+            // For 1D, start at 12:00 AM (midnight) of today, not yesterday
+            startDate = new Date(todayDateObj);
             break;
           case '1W':
             startDate.setDate(now.getDate() - 7);
@@ -1940,14 +2066,20 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
         }
         
         // Filter by date range
-        // For 1D, include today's hourly data; for other views, exclude today (we add current value separately)
+        // For 1D, include only today's data (starting at 12:00 AM); for other views, exclude today (we add current value separately)
         const dateFiltered = filtered.filter(item => {
-          const itemDate = item.dateNormalized || item.date; // Use normalized date for comparison
           if (timePeriod === '1D') {
-            // For 1D, include all data from the last 24 hours including today
-            return itemDate >= startDate;
+            // For 1D, include only data from today (starting at 12:00 AM midnight)
+            // Strictly check that the date string matches today's date string
+            // Also check that the actual date object is >= today's midnight
+            const itemDate = item.date || item.dateNormalized;
+            const itemDateStr = item.dateStr || `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
+            
+            // Only include items from today - both date string and timestamp must match
+            return itemDateStr === todayDateStr && itemDate >= startDate;
           } else {
             // For other views, exclude today's historical data since we'll use currentTotalValue
+            const itemDate = item.dateNormalized || item.date;
             return itemDate >= startDate && item.dateStr !== todayDateStr;
           }
         });
@@ -2266,9 +2398,10 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
     }
     
     const now = new Date();
-    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    // For 1D view, start from 12:00 AM (midnight) of today, not 24 hours ago
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
-    // Filter portfolio records from last 24 hours and selected users
+    // Filter portfolio records from today (starting at midnight) and selected users
     const recentChanges = portfolio.filter(item => {
       if (!selectedUsers.has(item.username)) {
         return false;
@@ -2283,7 +2416,8 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
         return false;
       }
       
-      return updateDate >= twentyFourHoursAgo && updateDate <= now;
+      // Only include changes from today (starting at midnight)
+      return updateDate >= todayMidnight && updateDate <= now;
     });
     
     // Group by timestamp and username to get unique position changes
