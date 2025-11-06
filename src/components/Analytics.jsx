@@ -2495,9 +2495,11 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
       }
       
       const userMap = changeMap.get(timestamp);
-      // Only keep the first change per user per timestamp
-      if (!userMap.has(item.username)) {
-        userMap.set(item.username, {
+      // Allow multiple changes per user per timestamp (different tickers)
+      // Use username+ticker as key to allow same user to have multiple position changes
+      const userTickerKey = `${item.username}_${item.ticker}`;
+      if (!userMap.has(userTickerKey)) {
+        userMap.set(userTickerKey, {
           username: item.username,
           ticker: item.ticker,
           shares: item.shares,
@@ -2547,11 +2549,24 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
       );
       
       if (existingIndex >= 0) {
-        // Create a new object with the position change property added
-        merged[existingIndex] = {
-          ...merged[existingIndex],
-          positionChange: change
-        };
+        // Create a new object with the position changes array
+        const existingPoint = merged[existingIndex];
+        const existingChanges = existingPoint.positionChanges || (existingPoint.positionChange ? [existingPoint.positionChange] : []);
+        
+        // Add the new change to the array if it's not already there
+        const changeExists = existingChanges.some(existing => 
+          existing.username === change.username && 
+          existing.ticker === change.ticker && 
+          existing.timestamp === change.timestamp
+        );
+        
+        if (!changeExists) {
+          merged[existingIndex] = {
+            ...existingPoint,
+            positionChanges: [...existingChanges, change],
+            positionChange: undefined // Remove single positionChange for consistency
+          };
+        }
       } else {
         // Add a new data point for the position change
         merged.push({
@@ -2560,7 +2575,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
           date: formatDateForChart(new Date(change.timestamp), timePeriod),
           fullDate: `${new Date(change.timestamp).getFullYear()}-${String(new Date(change.timestamp).getMonth() + 1).padStart(2, '0')}-${String(new Date(change.timestamp).getDate()).padStart(2, '0')}`,
           dateObj: new Date(change.timestamp),
-          positionChange: change,
+          positionChanges: [change],
           isPositionChange: true,
         });
       }
@@ -2673,30 +2688,23 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                 const dataPoint = payload.payload;
                 
                 // Debug: log payload structure to understand what we're working with
-                if (dataPoint?.positionChange || dataPoint?.isPositionChange) {
+                if (dataPoint?.positionChange || dataPoint?.positionChanges || dataPoint?.isPositionChange) {
                   console.log('Tooltip payload with position change:', { payload, dataPoint, label: props.label });
                 }
                 
-                // Check if this is a position change marker
-                const positionChange = dataPoint?.positionChange;
-                if (positionChange) {
-                  const formattedDate = formatDateForChart(new Date(positionChange.timestamp), timePeriod);
-                  // Format ticker for display (remove exchange prefix if present for cleaner display)
-                  const displayTicker = positionChange.ticker?.replace(/^BATS:/, '') || positionChange.ticker || 'Unknown';
-                  const tickerUpper = positionChange.ticker?.toUpperCase() || '';
-                  const changeAmount = positionChange.changeAmount || 0;
-                  const changeText = changeAmount >= 0 
-                    ? `+${changeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    : `${changeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                  const changeColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
-                  
-                  // Determine the unit label based on asset type
-                  let unitLabel = 'shares';
-                  if (tickerUpper === 'CASH' || tickerUpper === 'USD') {
-                    unitLabel = 'cash';
-                  } else if (tickerUpper === 'REAL ESTATE') {
-                    unitLabel = 'equity';
-                  }
+                // Check if this is a position change marker (support both single and array formats)
+                const positionChanges = dataPoint?.positionChanges || (dataPoint?.positionChange ? [dataPoint.positionChange] : []);
+                const hasPositionChanges = positionChanges.length > 0;
+                
+                // Check if this is a standalone position change (colored dot) vs merged with regular data point (blue dot)
+                const isStandalonePositionChange = dataPoint?.isPositionChange === true;
+                
+                if (hasPositionChanges) {
+                  const firstChange = positionChanges[0];
+                  const formattedDate = formatDateForChart(
+                    new Date(firstChange.timestamp), 
+                    timePeriod
+                  ) || dataPoint?.date || (props.label ? formatDateForChart(new Date(props.label), timePeriod) : '');
                   
                   return (
                     <div 
@@ -2710,15 +2718,47 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                       <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
                         {formattedDate}
                       </p>
-                      <p style={{ color: '#94a3b8', marginBottom: '4px' }}>
-                        {positionChange.username} changed their position
-                      </p>
-                      <p style={{ color: '#ffffff', fontSize: '14px', marginBottom: '4px' }}>
-                        {displayTicker}
-                      </p>
-                      <p style={{ color: changeColor, fontSize: '16px', fontWeight: 'bold' }}>
-                        {changeText} {unitLabel}
-                      </p>
+                      
+                      {/* Show portfolio value at the top only if this is a blue dot (merged with regular data point) */}
+                      {!isStandalonePositionChange && (
+                        <p style={{ color: '#ffffff', fontWeight: 'bold', marginBottom: '12px' }}>
+                          ${payload.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      )}
+                      
+                      {/* Position changes - always show for colored dots, also show for blue dots with changes */}
+                      {positionChanges.map((positionChange, index) => {
+                        // Format ticker for display (remove exchange prefix if present for cleaner display)
+                        const displayTicker = positionChange.ticker?.replace(/^BATS:/, '') || positionChange.ticker || 'Unknown';
+                        const tickerUpper = positionChange.ticker?.toUpperCase() || '';
+                        const changeAmount = positionChange.changeAmount || 0;
+                        const changeText = changeAmount >= 0 
+                          ? `+${changeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : `${changeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                        const changeColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
+                        
+                        // Determine the unit label based on asset type
+                        let unitLabel = 'shares';
+                        if (tickerUpper === 'CASH' || tickerUpper === 'USD') {
+                          unitLabel = 'cash';
+                        } else if (tickerUpper === 'REAL ESTATE') {
+                          unitLabel = 'equity';
+                        }
+                        
+                        return (
+                          <div key={index} style={{ marginBottom: index < positionChanges.length - 1 ? '8px' : '0' }}>
+                            <p style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '2px' }}>
+                              {positionChange.username} changed their position
+                            </p>
+                            <p style={{ color: '#ffffff', fontSize: '14px', marginBottom: '2px' }}>
+                              {displayTicker}
+                            </p>
+                            <p style={{ color: changeColor, fontSize: '16px', fontWeight: 'bold' }}>
+                              {changeText} {unitLabel}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 }
@@ -2758,12 +2798,20 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               strokeWidth={2}
               dot={(props) => {
                 const { cx, cy, payload } = props;
-                // Check if this point has a position change marker
-                const positionChange = payload?.positionChange;
-                if (positionChange) {
-                  const changeAmount = positionChange.changeAmount || 0;
-                  // Green for positive changes, red for negative
-                  const dotColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
+                // Check if this point has position change markers (support both single and array formats)
+                const positionChanges = payload?.positionChanges || (payload?.positionChange ? [payload.positionChange] : []);
+                
+                // Check if this is a standalone position change point (not merged with a regular data point)
+                // Standalone position changes have isPositionChange flag set to true
+                const isStandalonePositionChange = payload?.isPositionChange === true;
+                
+                // If it's a standalone position change (not overlapping with a blue dot), show colored dot
+                if (positionChanges.length > 0 && isStandalonePositionChange) {
+                  // Check if there's a mix of positive and negative changes
+                  const hasPositive = positionChanges.some(change => (change.changeAmount || 0) >= 0);
+                  const hasNegative = positionChanges.some(change => (change.changeAmount || 0) < 0);
+                  const dotColor = (hasPositive && hasNegative) ? '#eab308' : // Yellow for mixed
+                                   (hasPositive) ? '#22c55e' : '#ef4444'; // Green for all positive, red for all negative
                   
                   return (
                     <circle
@@ -2777,7 +2825,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                     />
                   );
                 }
-                // Regular dot for other points
+                // Regular blue dot (either regular data point OR position change overlapping with blue dot)
                 return (
                   <circle
                     cx={cx}
@@ -2791,12 +2839,20 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               }}
               activeDot={(props) => {
                 const { cx, cy, payload } = props;
-                // Check if this point has a position change marker
-                const positionChange = payload?.positionChange;
-                if (positionChange) {
-                  const changeAmount = positionChange.changeAmount || 0;
-                  // Green for positive changes, red for negative
-                  const dotColor = changeAmount >= 0 ? '#22c55e' : '#ef4444';
+                // Check if this point has position change markers (support both single and array formats)
+                const positionChanges = payload?.positionChanges || (payload?.positionChange ? [payload.positionChange] : []);
+                
+                // Check if this is a standalone position change point (not merged with a regular data point)
+                // Standalone position changes have isPositionChange flag set to true
+                const isStandalonePositionChange = payload?.isPositionChange === true;
+                
+                // If it's a standalone position change (not overlapping with a blue dot), show colored dot
+                if (positionChanges.length > 0 && isStandalonePositionChange) {
+                  // Check if there's a mix of positive and negative changes
+                  const hasPositive = positionChanges.some(change => (change.changeAmount || 0) >= 0);
+                  const hasNegative = positionChanges.some(change => (change.changeAmount || 0) < 0);
+                  const dotColor = (hasPositive && hasNegative) ? '#eab308' : // Yellow for mixed
+                                   (hasPositive) ? '#22c55e' : '#ef4444'; // Green for all positive, red for all negative
                   
                   return (
                     <circle
@@ -2810,7 +2866,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
                     />
                   );
                 }
-                // Regular active dot
+                // Regular blue active dot (either regular data point OR position change overlapping with blue dot)
                 return (
                   <circle
                     cx={cx}
