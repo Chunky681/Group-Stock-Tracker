@@ -1391,15 +1391,10 @@ const Analytics = ({ refreshKey }) => {
                           <p className="text-slate-400 text-sm">Cash Holdings</p>
                         </div>
                         <div className="text-right">
-                          <div className="text-2xl font-bold text-white">
+                          <div className="text-3xl font-bold text-white">
                             ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
-                          <p className="text-sm text-slate-400">Total Cash Value</p>
-                          {!isExpanded && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              Price: $1.00 • Total Shares: {(stock.totalShares || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          )}
+                          <p className="text-sm text-slate-400 mb-2">Total Cash Value</p>
                         </div>
                       </div>
 
@@ -1522,15 +1517,10 @@ const Analytics = ({ refreshKey }) => {
                           <p className="text-slate-400 text-sm">Real Estate Holdings</p>
                         </div>
                         <div className="text-right">
-                          <div className="text-2xl font-bold text-white">
+                          <div className="text-3xl font-bold text-white">
                             ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
-                          <p className="text-sm text-slate-400">Total Real Estate Value</p>
-                          {!isExpanded && (
-                            <p className="text-xs text-slate-500 mt-1">
-                              Price: $1.00 • Total Shares: {(stock.totalShares || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          )}
+                          <p className="text-sm text-slate-400 mb-2">Total Real Estate Value</p>
                         </div>
                       </div>
 
@@ -1701,12 +1691,12 @@ const Analytics = ({ refreshKey }) => {
                       {!isExpanded && (
                         <div className="text-right">
                           {/* Total Value - top right, similar to CASH/REAL ESTATE */}
-                          <div className="text-2xl font-bold text-white">
+                          <div className="text-3xl font-bold text-white">
                             ${(stock.totalValue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
-                          <p className="text-sm text-slate-400 mb-1">Total Value</p>
+                          <p className="text-sm text-slate-400 mb-2">Total Value</p>
                           {/* Total Shares - below Total Value */}
-                          <p className="text-xs text-slate-500">
+                          <p className="text-base text-slate-400 font-semibold">
                             Total Shares: {(stock.totalShares || 0).toFixed(2)}
                           </p>
                         </div>
