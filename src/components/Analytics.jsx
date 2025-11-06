@@ -1696,9 +1696,37 @@ const Analytics = ({ refreshKey }) => {
                           </div>
                           <p className="text-sm text-slate-400 mb-2">Total Value</p>
                           {/* Total Shares - below Total Value */}
-                          <p className="text-base text-slate-400 font-semibold">
+                          <p className="text-base text-slate-400 font-semibold mb-2">
                             Total Shares: {(stock.totalShares || 0).toFixed(2)}
                           </p>
+                          {/* Total Daily Dollar Change */}
+                          {stock.fullQuote?.change !== undefined && (
+                            <div className="flex flex-col items-end">
+                              <p className="text-xs text-slate-400 mb-1">Total Daily Change</p>
+                              <div className="flex items-center gap-1">
+                                {(() => {
+                                  const totalDailyChange = (stock.fullQuote.change || 0) * (stock.totalShares || 0);
+                                  const isPositive = totalDailyChange > 0;
+                                  const isNegative = totalDailyChange < 0;
+                                  const isFlat = totalDailyChange === 0;
+                                  
+                                  return (
+                                    <>
+                                      {isPositive && <ArrowUp className="w-4 h-4 text-green-400" />}
+                                      {isNegative && <ArrowDown className="w-4 h-4 text-red-400" />}
+                                      <p className={`text-base font-semibold ${
+                                        isPositive ? 'text-green-400' : 
+                                        isNegative ? 'text-red-400' : 
+                                        'text-white'
+                                      }`}>
+                                        {isPositive ? '+' : ''}${totalDailyChange.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </p>
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                       {isExpanded && (
@@ -1728,7 +1756,7 @@ const Analytics = ({ refreshKey }) => {
                             changePercent={stock.fullQuote?.changePercent || 0}
                           />
                           
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-800/50 rounded-lg">
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-slate-800/50 rounded-lg">
                       <div>
                         <p className="text-xs text-slate-400 mb-1">Total Value</p>
                         <p className="text-lg font-bold text-white">
@@ -1741,6 +1769,31 @@ const Analytics = ({ refreshKey }) => {
                           {stock.totalShares.toFixed(2)}
                         </p>
                       </div>
+                      {stock.fullQuote?.change !== undefined && (
+                        <div>
+                          <p className="text-xs text-slate-400 mb-1">Total Daily Change</p>
+                          {(() => {
+                            const totalDailyChange = (stock.fullQuote.change || 0) * (stock.totalShares || 0);
+                            const isPositive = totalDailyChange > 0;
+                            const isNegative = totalDailyChange < 0;
+                            const isFlat = totalDailyChange === 0;
+                            
+                            return (
+                              <div className="flex items-center gap-1">
+                                {isPositive && <ArrowUp className="w-4 h-4 text-green-400" />}
+                                {isNegative && <ArrowDown className="w-4 h-4 text-red-400" />}
+                                <p className={`text-lg font-bold ${
+                                  isPositive ? 'text-green-400' : 
+                                  isNegative ? 'text-red-400' : 
+                                  'text-white'
+                                }`}>
+                                  {isPositive ? '+' : ''}${totalDailyChange.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                       <div>
                         <p className="text-xs text-slate-400 mb-1">Dividend Yield</p>
                         <p className={`text-lg font-bold ${stock.dividendYield > 0 ? 'text-white' : 'text-slate-500'}`}>
