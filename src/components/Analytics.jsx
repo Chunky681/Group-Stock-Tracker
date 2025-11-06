@@ -1468,7 +1468,7 @@ const Analytics = ({ refreshKey }) => {
                               onChatSubmit={async (ticker, message, postingUser, positionUsername) => {
                                 try {
                                   await updateHoldingsHistoryChat(ticker, message, postingUser, positionUsername);
-                                  loadHoldingsHistory(); // Refresh to show new chat
+                                  loadHoldingsHistory(true); // Force refresh to show new chat
                                 } catch (error) {
                                   console.error('Error submitting chat:', error);
                                   alert(`Failed to submit chat: ${error.message}`);
@@ -1615,7 +1615,7 @@ const Analytics = ({ refreshKey }) => {
                               onChatSubmit={async (ticker, message, postingUser, positionUsername) => {
                                 try {
                                   await updateHoldingsHistoryChat(ticker, message, postingUser, positionUsername);
-                                  loadHoldingsHistory(); // Refresh to show new chat
+                                  loadHoldingsHistory(true); // Force refresh to show new chat
                                 } catch (error) {
                                   console.error('Error submitting chat:', error);
                                   alert(`Failed to submit chat: ${error.message}`);

@@ -1,5 +1,6 @@
 // Google Sheets API Integration
 import { getAccessToken, initializeGoogleAuth } from './googleAuth';
+import { recordApiRequest } from './rateLimiter';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -95,6 +96,9 @@ export const readSheetData = async (range = 'Sheet1!A1:D1000', forceRefresh = fa
   }
 
   try {
+    // Record API request only when we actually make the call (not for cache hits)
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?key=${apiKey}`
     );
@@ -145,6 +149,9 @@ export const appendRow = async (rowData) => {
     : 'Sheet1!A:D';
   
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
       {
@@ -200,6 +207,9 @@ export const updateRow = async (rowIndex, rowData) => {
     : `Sheet1!A${rowIndex}:D${rowIndex}`;
   
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
       {
@@ -251,6 +261,9 @@ export const deleteRow = async (rowIndex) => {
 
   // Use the Google Sheets API v4 batchUpdate to delete a row
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
       {
@@ -338,6 +351,9 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
   }
 
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     // First, read HoldingsHistory to find the most recent record for this username and ticker combination
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/HoldingsHistory!A1:E10000?key=${getApiKey()}`
@@ -397,6 +413,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       console.log(`No record found in HoldingsHistory for user "${positionUsername}" and ticker "${ticker}". Creating new record from Sheet1 data.`);
       
       // Read Sheet1 to get current holdings for this user and ticker
+      recordApiRequest();
       const sheet1Response = await fetch(
         `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/Sheet1!A1:D10000?key=${getApiKey()}`
       );
@@ -443,6 +460,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       ];
       
       // Append the new row to HoldingsHistory
+      recordApiRequest();
       const appendResponse = await fetch(
         `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/HoldingsHistory!A:E:append?valueInputOption=RAW`,
         {
@@ -489,6 +507,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       // Update the cell in column E
       const range = `HoldingsHistory!E${newRowIndex}`;
       
+      recordApiRequest();
       const updateResponse = await fetch(
         `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
         {
@@ -539,6 +558,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     // Update the cell in column E (index 4, so column E is column 5)
     const range = `HoldingsHistory!E${mostRecentRowIndex}`;
     
+    recordApiRequest();
     const updateResponse = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
       {
@@ -592,6 +612,9 @@ export const appendRowToSheet2 = async (rowData) => {
   const range = 'Sheet2!A:Q';
   
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
       {
@@ -649,6 +672,9 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
   const range = 'Sheet2!A:B';
   
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
       {
@@ -701,6 +727,9 @@ export const updateRowInSheet2 = async (rowIndex, rowData) => {
   const range = `Sheet2!A${rowIndex}:Q${rowIndex}`;
   
   try {
+    // Record API request before making the call
+    recordApiRequest();
+    
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
       {
@@ -777,6 +806,7 @@ export const deleteRowFromSheet2 = async (rowIndex) => {
     
     const sheet2Id = sheet2Info.properties.sheetId;
     
+    recordApiRequest();
     const response = await fetch(
       `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
       {

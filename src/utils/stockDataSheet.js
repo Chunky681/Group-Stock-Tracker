@@ -223,7 +223,8 @@ export const addNewTickerToSheet2 = async (tickerSymbol) => {
     }
 
     // Get current Sheet2 data to find the next row index
-    const data = await readSheetData('Sheet2!A1:Q1000');
+    // Use cached data since we just fetched it above (unless cache expired)
+    const data = await readSheetData('Sheet2!A1:Q1000', false); // Use cache if available
     const nextRowIndex = data.length + 1; // Next row after current data
 
     // Only write to columns A (empty) and B (Symbol) to preserve formulas in other columns
@@ -234,9 +235,9 @@ export const addNewTickerToSheet2 = async (tickerSymbol) => {
     // Wait 5 seconds to allow formulas to recalculate (based on observed timing for JPM and similar tickers)
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Refresh cache and check if Currency column populated with USD
+    // Force refresh and check if Currency column populated with USD (we just modified the sheet)
     clearStockDataCache();
-    const updatedData = await readSheetData('Sheet2!A1:Q1000');
+    const updatedData = await readSheetData('Sheet2!A1:Q1000', true); // Force refresh since we just added a row
     
     // Find the row we just added (should be the last row with our symbol)
     let addedRowIndex = -1;

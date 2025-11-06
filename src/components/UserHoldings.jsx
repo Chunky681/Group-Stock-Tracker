@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Edit2, Save, X, TrendingUp, DollarSign, RefreshCw, Plus, Trash2, Home } from 'lucide-react';
 import { readSheetData, updateRow, initializeSheet, deleteRow, formatHoldingsHistoryDate } from '../utils/googleSheets';
@@ -15,16 +15,35 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [sheetData, setSheetData] = useState([]); // Store raw sheet data to find row indices
   const [allRowIndices, setAllRowIndices] = useState(new Map()); // Store all row indices for each ticker
+  const lastRefreshKeyRef = useRef(null); // Track the last refreshKey to detect actual refreshes (null = first time)
+  const lastSelectedUserRef = useRef(null); // Track last selected user
 
   useEffect(() => {
     if (selectedUser) {
-      const isInitialLoad = refreshKey === 0;
-      const forceRefresh = !isInitialLoad;
-      const silent = !isInitialLoad;
+      // Check if this is the first load ever, or if refreshKey actually changed
+      const isFirstLoad = lastRefreshKeyRef.current === null;
+      const refreshKeyChanged = refreshKey !== lastRefreshKeyRef.current;
+      const userChanged = selectedUser !== lastSelectedUserRef.current;
+      
+      // Only force refresh if refreshKey actually changed (not just user switching)
+      // On first load (refreshKey = 0), use cache. On refresh (refreshKey > 0), force refresh.
+      const isInitialLoad = isFirstLoad && refreshKey === 0;
+      const forceRefresh = refreshKeyChanged && refreshKey > 0; // Only force when refreshKey changed AND > 0
+      const silent = !isInitialLoad && !userChanged; // Silent if not initial load and same user
+      
+      // Update refs to track state
+      lastRefreshKeyRef.current = refreshKey;
+      lastSelectedUserRef.current = selectedUser;
       
       if (isInitialLoad) {
         setIsLoading(true);
         setError(null);
+      } else if (!refreshKeyChanged && !userChanged) {
+        // Nothing changed, don't reload
+        return;
+      } else if (!refreshKeyChanged && userChanged) {
+        // User switched but refreshKey didn't change - use cache, minimal loading
+        setIsLoading(false);
       }
       
       loadHoldings(forceRefresh, silent);

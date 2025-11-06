@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { RefreshCw, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { RefreshCw, Clock, AlertTriangle } from 'lucide-react';
+import { subscribeToRateLimit } from '../utils/rateLimiter';
 
 const RefreshTimer = ({ onRefresh, intervalSeconds = 60 }) => {
   const [timeRemaining, setTimeRemaining] = useState(intervalSeconds);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isOnCooldown, setIsOnCooldown] = useState(false);
+  const [rateLimitState, setRateLimitState] = useState({ count: 0, percentage: 0, isLimited: false });
   const intervalRef = useRef(null);
   const lastRefreshTimeRef = useRef(Date.now());
   const lastManualRefreshTimeRef = useRef(0); // Track last manual refresh for cooldown
@@ -21,6 +23,15 @@ const RefreshTimer = ({ onRefresh, intervalSeconds = 60 }) => {
   useEffect(() => {
     isRefreshingRef.current = isRefreshing;
   }, [isRefreshing]);
+
+  // Subscribe to rate limit updates
+  useEffect(() => {
+    const unsubscribe = subscribeToRateLimit((state) => {
+      setRateLimitState(state);
+    });
+    
+    return unsubscribe;
+  }, []);
 
   // Check cooldown status
   useEffect(() => {
@@ -111,6 +122,25 @@ const RefreshTimer = ({ onRefresh, intervalSeconds = 60 }) => {
     >
       <div className="card p-3 bg-slate-800/90 backdrop-blur-sm border border-slate-700/50 shadow-lg">
         <div className="flex items-center gap-3">
+          {/* Rate Limit Progress Bar */}
+          <div className="flex flex-col items-center gap-1">
+            <div className="w-2 h-16 bg-slate-700 rounded-full overflow-hidden relative">
+              <motion.div
+                className={`absolute bottom-0 left-0 right-0 rounded-full transition-colors ${
+                  rateLimitState.isLimited 
+                    ? 'bg-red-500' 
+                    : rateLimitState.percentage > 80 
+                    ? 'bg-yellow-500' 
+                    : 'bg-primary-500'
+                }`}
+                initial={{ height: 0 }}
+                animate={{ height: `${rateLimitState.percentage}%` }}
+                transition={{ duration: 0.3 }}
+                style={{ height: `${rateLimitState.percentage}%` }}
+              />
+            </div>
+          </div>
+
           {/* Timer Display */}
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary-400" />
@@ -146,6 +176,23 @@ const RefreshTimer = ({ onRefresh, intervalSeconds = 60 }) => {
             </motion.div>
           </motion.button>
         </div>
+
+        {/* Rate Limit Error Message */}
+        <AnimatePresence>
+          {rateLimitState.isLimited && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: -10, height: 0 }}
+              className="mt-3 p-2 bg-red-500/20 border border-red-500/50 rounded-lg"
+            >
+              <div className="flex items-center gap-2 text-red-400 text-xs">
+                <AlertTriangle className="w-4 h-4" />
+                <span>API rate limit reached. Please wait for the bar to cool down.</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );
