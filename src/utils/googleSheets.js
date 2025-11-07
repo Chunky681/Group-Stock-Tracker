@@ -160,16 +160,17 @@ export const appendRow = async (rowData) => {
     // Record API request before making the call
     recordApiRequest();
     
+    // Use form-encoded data - browser sets Content-Type automatically (no preflight)
+    const formData = new URLSearchParams();
+    formData.append('action', 'append');
+    formData.append('sheet', 'Sheet1');
+    formData.append('data', JSON.stringify([rowData]));
+    
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Sheet1',
-        values: [rowData],
-        append: true,
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      // This is a "simple" Content-Type that doesn't trigger CORS preflight
+      body: formData,
     });
     
     const data = await response.json();
@@ -200,15 +201,17 @@ export const updateRow = async (rowIndex, rowData) => {
     // Record API request before making the call
     recordApiRequest();
     
+    // Use form-encoded data with text/plain to avoid CORS preflight
+    const formData = new URLSearchParams();
+    formData.append('action', 'update');
+    formData.append('sheet', 'Sheet1');
+    formData.append('range', range);
+    formData.append('data', JSON.stringify([rowData]));
+    
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        range: range,
-        values: [rowData],
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData,
     });
     
     const data = await response.json();
@@ -235,15 +238,16 @@ export const deleteRow = async (rowIndex) => {
     // Record API request before making the call
     recordApiRequest();
     
+    // Use form-encoded data with text/plain to avoid CORS preflight
+    const formData = new URLSearchParams();
+    formData.append('action', 'delete');
+    formData.append('sheet', 'Sheet1');
+    formData.append('row', rowIndex.toString());
+    
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Sheet1',
-        deleteRow: rowIndex,
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData,
     });
     
     const data = await response.json();
@@ -395,16 +399,14 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       
       // Append the new row to HoldingsHistory using web app
       recordApiRequest();
+      const formData1 = new URLSearchParams();
+      formData1.append('action', 'append');
+      formData1.append('sheet', 'HoldingsHistory');
+      formData1.append('data', JSON.stringify([newRow]));
       const appendResponse = await fetch(WEB_APP_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sheet: 'HoldingsHistory',
-          values: [newRow],
-          append: true,
-        }),
+        // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+        body: formData1,
       });
       
       const appendData = await appendResponse.json();
@@ -432,15 +434,15 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       const range = `HoldingsHistory!E${newRowIndex}`;
       
       recordApiRequest();
+      const formData2 = new URLSearchParams();
+      formData2.append('action', 'update');
+      formData2.append('sheet', 'HoldingsHistory');
+      formData2.append('range', range);
+      formData2.append('data', JSON.stringify([[newChatEntry]]));
       const updateResponse = await fetch(WEB_APP_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          range: range,
-          values: [[newChatEntry]],
-        }),
+        // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+        body: formData2,
       });
       
       const updateData = await updateResponse.json();
@@ -480,15 +482,15 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     const range = `HoldingsHistory!E${mostRecentRowIndex}`;
     
     recordApiRequest();
+    const formData3 = new URLSearchParams();
+    formData3.append('action', 'update');
+    formData3.append('sheet', 'HoldingsHistory');
+    formData3.append('range', range);
+    formData3.append('data', JSON.stringify([[updatedChats]]));
     const updateResponse = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        range: range,
-        values: [[updatedChats]],
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData3,
     });
     
     const updateData = await updateResponse.json();
@@ -515,16 +517,14 @@ export const appendRowToSheet2 = async (rowData) => {
     // Record API request before making the call
     recordApiRequest();
     
+    const formData = new URLSearchParams();
+    formData.append('action', 'append');
+    formData.append('sheet', 'Sheet2');
+    formData.append('data', JSON.stringify([rowData]));
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Sheet2',
-        values: [rowData],
-        append: true,
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData,
     });
     
     const data = await response.json();
@@ -552,16 +552,14 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
     // Record API request before making the call
     recordApiRequest();
     
+    const formData = new URLSearchParams();
+    formData.append('action', 'append');
+    formData.append('sheet', 'Sheet2');
+    formData.append('data', JSON.stringify([['', symbol]])); // Only write to columns A (empty) and B (symbol)
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Sheet2',
-        values: [['', symbol]], // Only write to columns A (empty) and B (symbol)
-        append: true,
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData,
     });
     
     const data = await response.json();
@@ -589,15 +587,15 @@ export const updateRowInSheet2 = async (rowIndex, rowData) => {
     // Record API request before making the call
     recordApiRequest();
     
+    const formData = new URLSearchParams();
+    formData.append('action', 'update');
+    formData.append('sheet', 'Sheet2');
+    formData.append('range', range);
+    formData.append('data', JSON.stringify([rowData]));
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        range: range,
-        values: [rowData],
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData,
     });
     
     const data = await response.json();
@@ -624,15 +622,14 @@ export const deleteRowFromSheet2 = async (rowIndex) => {
     // Record API request before making the call
     recordApiRequest();
     
+    const formData = new URLSearchParams();
+    formData.append('action', 'delete');
+    formData.append('sheet', 'Sheet2');
+    formData.append('row', rowIndex.toString());
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Sheet2',
-        deleteRow: rowIndex,
-      }),
+      // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
+      body: formData,
     });
     
     const data = await response.json();
