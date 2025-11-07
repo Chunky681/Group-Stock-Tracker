@@ -2,7 +2,7 @@
 import { recordApiRequest } from './rateLimiter';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw2kVDiNSzySrToRqMJZS4tI8vlOVRmmCK8ene0Tipb6_RuIm3DiZqpkxulvjGSOfLD/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyWi4TdeTVkyRL_klXBmF68nmU3jDd6CVUlpEHq5iTwVmzQ_l4Wg6Z-kiJ4VMha1-KF/exec';
 
 // Helper function to make fetch requests with CORS workaround for Google Apps Script
 // Google Apps Script doesn't reliably handle OPTIONS preflight, so we use a workaround
