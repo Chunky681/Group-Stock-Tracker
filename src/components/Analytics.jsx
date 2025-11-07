@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, PieChart, Users, TrendingUp, Check, Trophy, TrendingDown, DollarSign, Home, ChevronDown, ChevronUp, MessageSquare, Bell, Coins, Building2, ArrowUp, ArrowDown } from 'lucide-react';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, CartesianGrid, XAxis, YAxis, ReferenceDot } from 'recharts';
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, AreaChart, Area, CartesianGrid, XAxis, YAxis, ReferenceDot } from 'recharts';
 import { readSheetData, initializeSheet, updateHoldingsHistoryChat } from '../utils/googleSheets';
 import { getStockQuote } from '../utils/stockApi';
 
@@ -348,9 +348,11 @@ const Analytics = ({ refreshKey }) => {
   const [error, setError] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState(new Set());
   const [historyData, setHistoryData] = useState([]);
+  const [dailyTotalsData, setDailyTotalsData] = useState([]);
   const [holdingsHistory, setHoldingsHistory] = useState([]);
   const [usersFromSheet1, setUsersFromSheet1] = useState([]); // Store unique users from Sheet1
   const [timePeriod, setTimePeriod] = useState('1D'); // '1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'
+  const [chartType, setChartType] = useState('line'); // 'line' or 'stacked'
   const [postingUser, setPostingUser] = useState('');
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
@@ -378,6 +380,7 @@ const Analytics = ({ refreshKey }) => {
     Promise.all([
       loadPortfolio(forceRefresh, silent),
       loadHistoryData(forceRefresh),
+      loadDailyTotalsData(forceRefresh),
       loadHoldingsHistory(forceRefresh)
     ]).catch(error => {
       console.error('Error loading analytics data:', error);
@@ -450,6 +453,98 @@ const Analytics = ({ refreshKey }) => {
     } catch (error) {
       console.error('Error loading holdings history:', error);
       setHoldingsHistory([]);
+    }
+  };
+
+  // Load daily totals data from DailyTotals sheet
+  const loadDailyTotalsData = async (forceRefresh = false) => {
+    try {
+      const data = await readSheetData('DailyTotals!A1:C10000', forceRefresh);
+      
+      if (!data || data.length === 0) {
+        setDailyTotalsData([]);
+        return;
+      }
+      
+      // Skip header row (row 0)
+      const rows = data.slice(1).filter(row => row && row.length >= 2 && row[0] && row[1]);
+      
+      // First pass: collect all entries and find the most recent valid date
+      const entriesWithDates = [];
+      const entriesWithoutDates = [];
+      let mostRecentDate = null;
+      
+      rows.forEach(row => {
+        const username = row[0]?.trim() || '';
+        const totalValue = parseFloat(row[1]) || 0;
+        const snapshotDateStr = row[2]?.trim() || '';
+        
+        if (!username || totalValue <= 0) {
+          return;
+        }
+        
+        // Parse snapshot date (handle MM/DD/YYYY format and ISO timestamp format)
+        let snapshotDate = null;
+        if (snapshotDateStr) {
+          try {
+            if (snapshotDateStr.includes('T')) {
+              snapshotDate = new Date(snapshotDateStr);
+            } else {
+              // Try MM/DD/YYYY format
+              const parts = snapshotDateStr.split('/');
+              if (parts.length === 3) {
+                const month = parseInt(parts[0]) - 1; // Month is 0-indexed
+                const day = parseInt(parts[1]);
+                const year = parseInt(parts[2]);
+                snapshotDate = new Date(year, month, day);
+              } else {
+                snapshotDate = new Date(snapshotDateStr);
+              }
+            }
+            
+            if (isNaN(snapshotDate.getTime())) {
+              snapshotDate = null;
+            } else {
+              // Track the most recent date
+              if (!mostRecentDate || snapshotDate > mostRecentDate) {
+                mostRecentDate = snapshotDate;
+              }
+            }
+          } catch (e) {
+            snapshotDate = null;
+          }
+        }
+        
+        if (snapshotDate) {
+          entriesWithDates.push({
+            username,
+            totalValue,
+            snapshotDate,
+          });
+        } else {
+          entriesWithoutDates.push({
+            username,
+            totalValue,
+          });
+        }
+      });
+      
+      // Use most recent date for entries without dates, or use today if no dates exist
+      const fallbackDate = mostRecentDate || new Date();
+      
+      // Combine entries: those with dates + those without dates using fallback date
+      const dailyTotals = [
+        ...entriesWithDates,
+        ...entriesWithoutDates.map(entry => ({
+          ...entry,
+          snapshotDate: fallbackDate,
+        })),
+      ];
+      
+      setDailyTotalsData(dailyTotals);
+    } catch (error) {
+      console.error('Error loading daily totals data:', error);
+      setDailyTotalsData([]);
     }
   };
 
@@ -1267,31 +1362,67 @@ const Analytics = ({ refreshKey }) => {
               <h3 className="text-xl font-bold text-white">Portfolio Value Over Time</h3>
             </div>
             
-            {/* Time Period Toggles */}
-            <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
-              {['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map((period) => (
+            <div className="flex items-center gap-4">
+              {/* Chart Type Toggle */}
+              <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
                 <button
-                  key={period}
-                  onClick={() => setTimePeriod(period)}
+                  onClick={() => setChartType('line')}
                   className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-                    timePeriod === period
+                    chartType === 'line'
                       ? 'bg-primary-500 text-white'
                       : 'text-slate-400 hover:text-slate-300'
                   }`}
                 >
-                  {period}
+                  Line
                 </button>
-              ))}
+                <button
+                  onClick={() => setChartType('stacked')}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    chartType === 'stacked'
+                      ? 'bg-primary-500 text-white'
+                      : 'text-slate-400 hover:text-slate-300'
+                  }`}
+                >
+                  Stacked
+                </button>
+              </div>
+              
+              {/* Time Period Toggles */}
+              <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
+                {['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map((period) => (
+                  <button
+                    key={period}
+                    onClick={() => setTimePeriod(period)}
+                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                      timePeriod === period
+                        ? 'bg-primary-500 text-white'
+                        : 'text-slate-400 hover:text-slate-300'
+                    }`}
+                  >
+                    {period}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           
-          <PortfolioValueChart 
-            historyData={historyData}
-            selectedUsers={selectedUsers}
-            timePeriod={timePeriod}
-            currentTotalValue={totalValue}
-            portfolio={portfolio}
-          />
+          {chartType === 'line' ? (
+            <PortfolioValueChart 
+              historyData={historyData}
+              selectedUsers={selectedUsers}
+              timePeriod={timePeriod}
+              currentTotalValue={totalValue}
+              portfolio={portfolio}
+            />
+          ) : (
+            <StackedAreaChart 
+              historyData={historyData}
+              dailyTotalsData={dailyTotalsData}
+              selectedUsers={selectedUsers}
+              timePeriod={timePeriod}
+              currentTotalValue={totalValue}
+            />
+          )}
         </motion.div>
       )}
 
@@ -2958,6 +3089,446 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               isAnimationActive={false}
             />
           </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
+
+// Stacked Area Chart Component - Shows each user's value separately
+const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePeriod, currentTotalValue }) => {
+  // Process history data to create stacked area chart data
+  const chartData = useMemo(() => {
+    const now = new Date();
+    const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayDateObj = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    if (!historyData || historyData.length === 0) {
+      return [];
+    }
+    
+    // Filter by selected users
+    let filtered = historyData.filter(item => selectedUsers.has(item.username));
+    
+    if (filtered.length === 0) {
+      return [];
+    }
+    
+    // Determine allowed CaptureTypes based on time period (same logic as PortfolioValueChart)
+    let allowedCaptureTypes = [];
+    switch (timePeriod) {
+      case '1D':
+        allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
+        break;
+      case '1W':
+        allowedCaptureTypes = ['DAILY', 'WEEKLY'];
+        break;
+      case '1M':
+      case '3M':
+        allowedCaptureTypes = ['DAILY', 'WEEKLY'];
+        break;
+      case 'YTD':
+      case '1Y':
+      case 'ALL':
+        allowedCaptureTypes = ['WEEKLY'];
+        break;
+      default:
+        allowedCaptureTypes = ['HOURLY', 'DAILY', 'WEEKLY'];
+    }
+    
+    // Filter by CaptureType
+    filtered = filtered.filter(item => {
+      const captureType = item.captureType?.toUpperCase() || '';
+      return allowedCaptureTypes.includes(captureType);
+    });
+    
+    // Calculate date range based on time period
+    let startDate = new Date();
+    switch (timePeriod) {
+      case '1D':
+        startDate = new Date(todayDateObj);
+        break;
+      case '1W':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case '1M':
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      case '3M':
+        startDate.setMonth(now.getMonth() - 3);
+        break;
+      case 'YTD':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      case '1Y':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      case 'ALL':
+        startDate = new Date(0);
+        break;
+      default:
+        startDate = new Date(0);
+    }
+    
+    // Filter by date range
+    const dateFiltered = filtered.filter(item => {
+      if (timePeriod === '1D') {
+        const itemDate = item.date || item.dateNormalized;
+        const itemDateStr = item.dateStr || `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
+        return itemDateStr === todayDateStr && itemDate >= startDate;
+      } else {
+        const itemDate = item.dateNormalized || item.date;
+        return itemDate >= startDate && item.dateStr !== todayDateStr;
+      }
+    });
+    
+    // Group data by timestamp and aggregate by user
+    const timeMap = new Map();
+    
+    if (timePeriod === '1D') {
+      // For 1D: Group by hour, use last value per user per hour
+      const hourUserMap = new Map();
+      
+      dateFiltered.forEach(item => {
+        const date = item.date;
+        const hourTimestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), 0, 0, 0).getTime();
+        
+        if (!hourUserMap.has(hourTimestamp)) {
+          hourUserMap.set(hourTimestamp, new Map());
+        }
+        
+        const userMap = hourUserMap.get(hourTimestamp);
+        const existingEntry = userMap.get(item.username);
+        
+        if (!existingEntry || date > existingEntry.date) {
+          userMap.set(item.username, {
+            date: date,
+            totalValue: item.totalValue,
+            username: item.username,
+          });
+        }
+      });
+      
+      // Convert to array format
+      hourUserMap.forEach((userMap, hourTimestamp) => {
+        const dateObj = new Date(hourTimestamp);
+        const dateKey = formatDateForChart(dateObj, timePeriod);
+        
+        const dataPoint = {
+          timestamp: hourTimestamp,
+          date: dateKey,
+          dateObj: dateObj,
+        };
+        
+        // Add each user's value
+        userMap.forEach((entry, username) => {
+          dataPoint[username] = entry.totalValue;
+        });
+        
+        timeMap.set(hourTimestamp, dataPoint);
+      });
+    } else {
+      // For other periods: Group by date, use last value per user per day
+      const periodUserMap = new Map();
+      
+      dateFiltered.forEach(item => {
+        const date = item.date;
+        const captureType = item.captureType?.toUpperCase() || '';
+        
+        let periodKey;
+        let dateObj;
+        
+        if (captureType === 'HOURLY') {
+          const hourTimestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), 0, 0, 0);
+          periodKey = hourTimestamp.getTime();
+          dateObj = hourTimestamp;
+        } else {
+          const dayTimestamp = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+          periodKey = dayTimestamp.getTime();
+          dateObj = dayTimestamp;
+        }
+        
+        if (!periodUserMap.has(periodKey)) {
+          periodUserMap.set(periodKey, new Map());
+        }
+        
+        const userMap = periodUserMap.get(periodKey);
+        const existingEntry = userMap.get(item.username);
+        
+        if (!existingEntry || date > existingEntry.date) {
+          userMap.set(item.username, {
+            date: date,
+            totalValue: item.totalValue,
+            username: item.username,
+          });
+        }
+      });
+      
+      // Convert to array format
+      periodUserMap.forEach((userMap, periodKey) => {
+        const dateObj = new Date(periodKey);
+        const dateKey = formatDateForChart(dateObj, timePeriod);
+        
+        const dataPoint = {
+          timestamp: periodKey,
+          date: dateKey,
+          dateObj: dateObj,
+        };
+        
+        // Add each user's value
+        userMap.forEach((entry, username) => {
+          dataPoint[username] = entry.totalValue;
+        });
+        
+        timeMap.set(periodKey, dataPoint);
+      });
+    }
+    
+    // Convert map to array and sort by timestamp
+    let result = Array.from(timeMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Add final point using DailyTotals data
+    if (dailyTotalsData && dailyTotalsData.length > 0) {
+      // For 1D view, use current time; for other views, use the most recent date from DailyTotals
+      let finalDate;
+      if (timePeriod === '1D') {
+        // Use current time for 1D view to show present time
+        finalDate = now;
+      } else {
+        // Find the most recent snapshot date from DailyTotals for other views
+        const mostRecentDate = dailyTotalsData.reduce((latest, current) => {
+          if (!latest) return current.snapshotDate;
+          return current.snapshotDate > latest ? current.snapshotDate : latest;
+        }, null);
+        finalDate = mostRecentDate || now;
+      }
+      
+      if (finalDate) {
+        const finalPoint = {
+          timestamp: finalDate.getTime(),
+          date: formatDateForChart(finalDate, timePeriod),
+          dateObj: finalDate,
+        };
+        
+        // Add each selected user's value from DailyTotals
+        // Include ALL users from DailyTotals, not just those matching the most recent date
+        const dailyTotalsByUser = new Map();
+        dailyTotalsData.forEach(item => {
+          dailyTotalsByUser.set(item.username, item.totalValue);
+        });
+        
+        // Add values for selected users from DailyTotals
+        Array.from(selectedUsers).forEach(username => {
+          finalPoint[username] = dailyTotalsByUser.get(username) || 0;
+        });
+        
+        // Only add if we have at least one user with data
+        const hasData = Array.from(selectedUsers).some(username => finalPoint[username] > 0);
+        if (hasData) {
+          // Remove any existing point at the same timestamp to avoid duplicates
+          result = result.filter(point => point.timestamp !== finalPoint.timestamp);
+          result.push(finalPoint);
+        }
+      }
+    } else if (result.length > 0) {
+      // Fallback: Use last known values if DailyTotals is not available
+      const lastPoint = result[result.length - 1];
+      const todayPoint = {
+        timestamp: now.getTime(),
+        date: formatDateForChart(now, timePeriod),
+        dateObj: now,
+      };
+      
+      // Use last known values per user
+      Array.from(selectedUsers).forEach(username => {
+        todayPoint[username] = lastPoint[username] || 0;
+      });
+      
+      result.push(todayPoint);
+    } else if (currentTotalValue > 0) {
+      // Last fallback: Distribute currentTotalValue evenly if no data exists
+      const userCount = selectedUsers.size;
+      const valuePerUser = currentTotalValue / userCount;
+      
+      const todayPoint = {
+        timestamp: now.getTime(),
+        date: formatDateForChart(now, timePeriod),
+        dateObj: now,
+      };
+      
+      Array.from(selectedUsers).forEach(username => {
+        todayPoint[username] = valuePerUser;
+      });
+      
+      result.push(todayPoint);
+    }
+    
+    return result;
+  }, [historyData, dailyTotalsData, selectedUsers, timePeriod, currentTotalValue]);
+  
+  // Calculate Y-axis domain
+  const yAxisDomain = useMemo(() => {
+    if (chartData.length === 0) {
+      return [0, 1000];
+    }
+    
+    let maxValue = 0;
+    chartData.forEach(point => {
+      let pointTotal = 0;
+      Array.from(selectedUsers).forEach(username => {
+        pointTotal += point[username] || 0;
+      });
+      maxValue = Math.max(maxValue, pointTotal);
+    });
+    
+    const padding = maxValue * 0.1;
+    return [0, maxValue + padding];
+  }, [chartData, selectedUsers]);
+  
+  // Calculate change stats
+  const stats = useMemo(() => {
+    if (chartData.length === 0) {
+      return { currentValue: 0, change: 0, changePercent: 0 };
+    }
+    
+    const firstPoint = chartData[0];
+    const lastPoint = chartData[chartData.length - 1];
+    
+    let firstTotal = 0;
+    let lastTotal = 0;
+    
+    Array.from(selectedUsers).forEach(username => {
+      firstTotal += firstPoint[username] || 0;
+      lastTotal += lastPoint[username] || 0;
+    });
+    
+    const change = lastTotal - firstTotal;
+    const changePercent = firstTotal > 0 ? (change / firstTotal) * 100 : 0;
+    
+    return {
+      currentValue: lastTotal,
+      change,
+      changePercent,
+    };
+  }, [chartData, selectedUsers]);
+  
+  // Custom tooltip
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload || payload.length === 0) {
+      return null;
+    }
+    
+    // Get the formatted date from the payload's data point
+    const dataPoint = payload[0]?.payload;
+    const formattedDate = dataPoint?.date || (label ? formatDateForChart(new Date(label), timePeriod) : String(label));
+    
+    let total = 0;
+    payload.forEach(item => {
+      total += item.value || 0;
+    });
+    
+    return (
+      <div className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl">
+        <p className="text-slate-400 mb-2">{formattedDate}</p>
+        {payload.map((item, index) => (
+          <p key={index} className="text-white" style={{ color: item.color }}>
+            {item.name}: ${(item.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        ))}
+        <p className="text-white font-bold mt-2 border-t border-slate-700 pt-2">
+          Total: ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </p>
+      </div>
+    );
+  };
+  
+  // Calculate X-axis domain - extend to current time for 1D view
+  const xAxisDomain = useMemo(() => {
+    if (timePeriod === '1D' && chartData.length > 0) {
+      const now = new Date().getTime();
+      const dataMin = Math.min(...chartData.map(d => d.timestamp));
+      return [dataMin, now];
+    }
+    return ['dataMin', 'dataMax'];
+  }, [chartData, timePeriod]);
+  
+  if (chartData.length === 0) {
+    return (
+      <div className="h-80 flex items-center justify-center">
+        <p className="text-slate-400">No data available for selected time period</p>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="space-y-4">
+      {/* Summary Stats */}
+      <div className="flex items-end gap-6">
+        <div>
+          <p className="text-sm text-slate-400 mb-1">Current Value</p>
+          <p className="text-3xl font-bold text-white">
+            ${stats.currentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </div>
+        <div>
+          <p className="text-sm text-slate-400 mb-1">
+            {timePeriod === 'ALL' ? 'Total Change' : 'Period Change'}
+          </p>
+          <p className={`text-2xl font-bold ${stats.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {stats.change >= 0 ? '+' : ''}${stats.change.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+          <p className={`text-sm ${stats.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {stats.changePercent >= 0 ? '+' : ''}{stats.changePercent.toFixed(2)}%
+          </p>
+        </div>
+      </div>
+      
+      {/* Stacked Area Chart */}
+      <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart 
+            data={chartData} 
+            margin={{ top: 5, right: 50, bottom: 5, left: 20 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+            <XAxis 
+              dataKey="timestamp" 
+              type="number"
+              scale="linear"
+              domain={xAxisDomain}
+              stroke="#94a3b8"
+              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              axisLine={{ stroke: '#475569' }}
+              tickFormatter={(value) => {
+                const date = new Date(value);
+                return formatDateForChart(date, timePeriod);
+              }}
+            />
+            <YAxis 
+              stroke="#94a3b8"
+              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              axisLine={{ stroke: '#475569' }}
+              tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+              domain={yAxisDomain}
+            />
+            <Tooltip 
+              content={<CustomTooltip />}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
+            <Legend />
+            {Array.from(selectedUsers).map((username, index) => (
+              <Area
+                key={username}
+                type="monotone"
+                dataKey={username}
+                stackId="1"
+                stroke={COLORS[index % COLORS.length]}
+                fill={COLORS[index % COLORS.length]}
+                fillOpacity={0.8}
+                strokeWidth={0}
+              />
+            ))}
+          </AreaChart>
         </ResponsiveContainer>
       </div>
     </div>
