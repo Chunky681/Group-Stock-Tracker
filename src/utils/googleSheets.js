@@ -4,6 +4,35 @@ import { recordApiRequest } from './rateLimiter';
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw2kVDiNSzySrToRqMJZS4tI8vlOVRmmCK8ene0Tipb6_RuIm3DiZqpkxulvjGSOfLD/exec';
 
+// Helper function to make fetch requests with CORS workaround for Google Apps Script
+// Google Apps Script doesn't reliably handle OPTIONS preflight, so we use a workaround
+async function fetchWithCorsWorkaround(url, options = {}) {
+  try {
+    // First attempt - normal fetch
+    const response = await fetch(url, options);
+    return response;
+  } catch (error) {
+    // If it's a CORS/network error, try with mode: 'no-cors' as fallback won't work
+    // Instead, we'll retry with explicit CORS mode
+    if (error.name === 'TypeError' || error.message.includes('Failed to fetch')) {
+      // Retry with explicit CORS handling
+      try {
+        const retryOptions = {
+          ...options,
+          mode: 'cors',
+          credentials: 'omit',
+        };
+        const response = await fetch(url, retryOptions);
+        return response;
+      } catch (retryError) {
+        // If still failing, throw original error
+        throw error;
+      }
+    }
+    throw error;
+  }
+}
+
 // Cache for sheet data to reduce API calls
 const sheetDataCache = new Map();
 const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes cache for sheet data
