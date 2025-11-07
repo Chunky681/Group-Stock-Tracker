@@ -374,28 +374,11 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
         animate={{ opacity: 1, y: 0 }}
         className="card p-6"
       >
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-2xl font-bold text-white mb-2">
-              {selectedUser}'s Holdings
-            </h3>
-            <p className="text-slate-400">View and edit your stock portfolio</p>
-          </div>
-          <motion.button
-            onClick={refreshPrices}
-            disabled={refreshLoading}
-            className="btn-secondary flex items-center gap-2"
-            whileHover={{ scale: refreshLoading ? 1 : 1.05 }}
-            whileTap={{ scale: refreshLoading ? 1 : 0.95 }}
-          >
-            <motion.div
-              animate={refreshLoading ? { rotate: 360 } : {}}
-              transition={refreshLoading ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </motion.div>
-            Refresh Prices
-          </motion.button>
+        <div className="mb-4">
+          <h3 className="text-2xl font-bold text-white mb-2">
+            {selectedUser}'s Holdings
+          </h3>
+          <p className="text-slate-400">View and edit your stock portfolio</p>
         </div>
         
         <div className="text-center mb-6">
