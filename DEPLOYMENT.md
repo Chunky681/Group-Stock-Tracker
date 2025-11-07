@@ -29,10 +29,9 @@ Since your app uses environment variables, you need to add them as GitHub Secret
 1. Go to your repository on GitHub
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Click **New repository secret** and add each of these:
-   - `VITE_GOOGLE_SHEET_ID` - Your Google Sheet ID
-   - `VITE_GOOGLE_API_KEY` - Your Google API Key
-   - `VITE_GOOGLE_CLIENT_ID` - Your Google OAuth Client ID (optional, only if using OAuth)
-   - `VITE_FINNHUB_API_KEY` - Your Finnhub API Key
+   - `VITE_GOOGLE_SHEET_ID` - Your Google Sheet ID (required)
+   - `VITE_GOOGLE_SHEETS_API_KEY` - Your Google Sheets API Key (required)
+   - `VITE_GOOGLE_CLIENT_ID` - Your Google OAuth Client ID (required for write operations)
 
 ## Step 3: Enable GitHub Pages
 
