@@ -1,5 +1,4 @@
 // Google Sheets API Integration
-import { getAccessToken, initializeGoogleAuth } from './googleAuth';
 import { recordApiRequest } from './rateLimiter';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -201,60 +200,28 @@ export const updateRow = async (rowIndex, rowData) => {
   }
 };
 
-// NOTE: Delete operations still require OAuth because the web app script doesn't support delete operations
-// The web app only supports append and direct range writes
+// Delete a row from Sheet1 using the Web App endpoint
 export const deleteRow = async (rowIndex) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token (will initialize and prompt user login if needed)
-  let accessToken;
-  try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  // Use the Google Sheets API v4 batchUpdate to delete a row
   try {
     // Record API request before making the call
     recordApiRequest();
     
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          requests: [
-            {
-              deleteDimension: {
-                range: {
-                  sheetId: 0, // Sheet1 is typically sheetId 0
-                  dimension: 'ROWS',
-                  startIndex: rowIndex - 1, // Convert 1-based to 0-based index
-                  endIndex: rowIndex, // Delete just one row
-                },
-              },
-            },
-          ],
-        }),
-      }
-    );
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sheet: 'Sheet1',
+        deleteRow: rowIndex,
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to delete row: ${errorMsg}`);
     }
     
@@ -622,82 +589,28 @@ export const updateRowInSheet2 = async (rowIndex, rowData) => {
   }
 };
 
-// NOTE: Delete operations still require OAuth because the web app script doesn't support delete operations
+// Delete a row from Sheet2 using the Web App endpoint
 export const deleteRowFromSheet2 = async (rowIndex) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token
-  let accessToken;
   try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  // Use the Google Sheets API v4 batchUpdate to delete a row from Sheet2
-  // First, we need to get the sheet ID for Sheet2
-  try {
-    // Read Sheet2 to find the sheet ID
-    const sheetsResponse = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      }
-    );
-    
-    const sheetsData = await sheetsResponse.json();
-    
-    if (!sheetsResponse.ok) {
-      throw new Error(`Failed to get sheet info: ${sheetsData.error?.message || sheetsResponse.status}`);
-    }
-    
-    // Find Sheet2's sheet ID
-    const sheet2Info = sheetsData.sheets?.find(sheet => sheet.properties.title === 'Sheet2');
-    if (!sheet2Info) {
-      throw new Error('Sheet2 not found');
-    }
-    
-    const sheet2Id = sheet2Info.properties.sheetId;
-    
+    // Record API request before making the call
     recordApiRequest();
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}:batchUpdate`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          requests: [
-            {
-              deleteDimension: {
-                range: {
-                  sheetId: sheet2Id,
-                  dimension: 'ROWS',
-                  startIndex: rowIndex - 1, // Convert 1-based to 0-based index
-                  endIndex: rowIndex, // Delete just one row
-                },
-              },
-            },
-          ],
-        }),
-      }
-    );
+    
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sheet: 'Sheet2',
+        deleteRow: rowIndex,
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to delete row from Sheet2: ${errorMsg}`);
     }
     

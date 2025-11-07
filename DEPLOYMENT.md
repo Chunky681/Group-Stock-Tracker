@@ -31,7 +31,6 @@ Since your app uses environment variables, you need to add them as GitHub Secret
 3. Click **New repository secret** and add each of these:
    - `VITE_GOOGLE_SHEET_ID` - Your Google Sheet ID (required)
    - `VITE_GOOGLE_SHEETS_API_KEY` - Your Google Sheets API Key (required)
-   - `VITE_GOOGLE_CLIENT_ID` - Your Google OAuth Client ID (optional - only needed for delete operations)
 
 ## Step 3: Enable GitHub Pages
 
