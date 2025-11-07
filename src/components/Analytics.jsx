@@ -1734,12 +1734,23 @@ const Analytics = ({ refreshKey }) => {
                           <div className="text-2xl font-bold text-white">
                             ${stock.price.toFixed(2)}
                           </div>
-                          {stock.fullQuote?.changePercent !== undefined && (
+                          {(stock.fullQuote?.change !== undefined || stock.fullQuote?.changePercent !== undefined) && (
                             <div className={`text-sm font-semibold ${
-                              (stock.fullQuote.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                              (stock.fullQuote?.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
                             }`}>
-                              {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
-                              {(stock.fullQuote.changePercent || 0).toFixed(2)}%
+                              {stock.fullQuote?.change !== undefined && (
+                                <>
+                                  {(stock.fullQuote.change || 0) >= 0 ? '+' : ''}
+                                  ${(stock.fullQuote.change || 0).toFixed(2)}
+                                  {' '}
+                                </>
+                              )}
+                              {stock.fullQuote?.changePercent !== undefined && (
+                                <>
+                                  ({(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
+                                  {(stock.fullQuote.changePercent || 0).toFixed(2)}%)
+                                </>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1911,14 +1922,25 @@ const Analytics = ({ refreshKey }) => {
                               </p>
                             </div>
                           )}
-                          {stock.fullQuote?.changePercent !== undefined && (
+                          {(stock.fullQuote?.change !== undefined || stock.fullQuote?.changePercent !== undefined) && (
                             <div className="p-2 bg-slate-800/50 rounded">
                               <p className="text-xs text-slate-400 mb-1">Change %</p>
                               <p className={`text-sm font-bold ${
-                                (stock.fullQuote.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
+                                (stock.fullQuote?.changePercent || 0) >= 0 ? 'text-green-400' : 'text-red-400'
                               }`}>
-                                {(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
-                                {(stock.fullQuote.changePercent || 0).toFixed(2)}%
+                                {stock.fullQuote?.change !== undefined && (
+                                  <>
+                                    {(stock.fullQuote.change || 0) >= 0 ? '+' : ''}
+                                    ${(stock.fullQuote.change || 0).toFixed(2)}
+                                    {' '}
+                                  </>
+                                )}
+                                {stock.fullQuote?.changePercent !== undefined && (
+                                  <>
+                                    ({(stock.fullQuote.changePercent || 0) >= 0 ? '+' : ''}
+                                    {(stock.fullQuote.changePercent || 0).toFixed(2)}%)
+                                  </>
+                                )}
                               </p>
                             </div>
                           )}
