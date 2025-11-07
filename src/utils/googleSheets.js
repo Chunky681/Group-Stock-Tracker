@@ -4,6 +4,40 @@ import { recordApiRequest } from './rateLimiter';
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyWi4TdeTVkyRL_klXBmF68nmU3jDd6CVUlpEHq5iTwVmzQ_l4Wg6Z-kiJ4VMha1-KF/exec';
 
+// Helper function to safely parse JSON responses from Google Apps Script
+// Checks Content-Type to ensure we're parsing JSON, not HTML error pages
+async function parseJsonResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  
+  // Clone response so we can read it multiple times if needed
+  const clonedResponse = response.clone();
+  
+  // Check if response is definitely HTML (not JSON)
+  if (contentType.includes('text/html')) {
+    const text = await response.text();
+    // Try to extract error message from HTML if possible
+    const errorMatch = text.match(/<title>([^<]+)<\/title>/i) || text.match(/<h1>([^<]+)<\/h1>/i);
+    const errorMsg = errorMatch ? errorMatch[1] : 'Server returned HTML instead of JSON';
+    throw new Error(`Invalid response format: ${errorMsg}. The Google Apps Script may have encountered an error.`);
+  }
+  
+  // Try to parse as JSON
+  try {
+    return await response.json();
+  } catch (parseError) {
+    // If parsing fails, check if it's HTML
+    const text = await clonedResponse.text();
+    if (text.trim().startsWith('<')) {
+      // It's HTML
+      const errorMatch = text.match(/<title>([^<]+)<\/title>/i) || text.match(/<h1>([^<]+)<\/h1>/i);
+      const errorMsg = errorMatch ? errorMatch[1] : 'Server returned HTML instead of JSON';
+      throw new Error(`Invalid response format: ${errorMsg}. The Google Apps Script may have encountered an error.`);
+    }
+    // Not HTML, but also not valid JSON
+    throw new Error(`Failed to parse JSON response: ${parseError.message}. Response: ${text.substring(0, 200)}`);
+  }
+}
+
 // Helper function to make fetch requests with CORS workaround for Google Apps Script
 // Google Apps Script doesn't reliably handle OPTIONS preflight, so we use a workaround
 async function fetchWithCorsWorkaround(url, options = {}) {
@@ -173,7 +207,7 @@ export const appendRow = async (rowData) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
@@ -214,7 +248,7 @@ export const updateRow = async (rowIndex, rowData) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
@@ -250,7 +284,7 @@ export const deleteRow = async (rowIndex) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
@@ -302,7 +336,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     
     // First, read HoldingsHistory to find the most recent record for this username and ticker combination
     const readResponse = await fetch(`${WEB_APP_URL}?range=HoldingsHistory!A1:E10000`);
-    const readData = await readResponse.json();
+    const readData = await parseJsonResponse(readResponse);
     
     if (!readResponse.ok || !readData.ok) {
       throw new Error(`Failed to read HoldingsHistory: ${readData.error || readResponse.status}`);
@@ -356,7 +390,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       // Read Sheet1 to get current holdings for this user and ticker
       recordApiRequest();
       const sheet1Response = await fetch(`${WEB_APP_URL}?range=Sheet1!A1:D10000`);
-      const sheet1Data = await sheet1Response.json();
+      const sheet1Data = await parseJsonResponse(sheet1Response);
       
       if (!sheet1Response.ok || !sheet1Data.ok) {
         throw new Error(`Failed to read Sheet1: ${sheet1Data.error || sheet1Response.status}`);
@@ -409,7 +443,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
         body: formData1,
       });
       
-      const appendData = await appendResponse.json();
+      const appendData = await parseJsonResponse(appendResponse);
       
       if (!appendResponse.ok || !appendData.ok) {
         const errorMsg = appendData.error || `HTTP ${appendResponse.status}`;
@@ -445,7 +479,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
         body: formData2,
       });
       
-      const updateData = await updateResponse.json();
+      const updateData = await parseJsonResponse(updateResponse);
       
       if (!updateResponse.ok || !updateData.ok) {
         const errorMsg = updateData.error || `HTTP ${updateResponse.status}`;
@@ -493,7 +527,7 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       body: formData3,
     });
     
-    const updateData = await updateResponse.json();
+    const updateData = await parseJsonResponse(updateResponse);
     
     if (!updateResponse.ok || !updateData.ok) {
       const errorMsg = updateData.error || `HTTP ${updateResponse.status}`;
@@ -527,7 +561,7 @@ export const appendRowToSheet2 = async (rowData) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
@@ -562,7 +596,7 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
@@ -598,7 +632,7 @@ export const updateRowInSheet2 = async (rowIndex, rowData) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
@@ -632,7 +666,7 @@ export const deleteRowFromSheet2 = async (rowIndex) => {
       body: formData,
     });
     
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
