@@ -421,17 +421,28 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
         throw new Error(`No holdings found in Sheet1 for user "${positionUsername}" and ticker "${ticker}"`);
       }
       
-      // Create new row in HoldingsHistory: A=current time, B=username, C=ticker, D=shares, E=empty (will add chat)
+      // Format the chat message with timestamp
+      const timestamp = new Date().toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      });
+      const newChatEntry = `${postingUser}: ${chatMessage} (${timestamp})`;
+      
+      // Create new row in HoldingsHistory: A=current time, B=username, C=ticker, D=shares, E=chat message
+      // Include the chat message in the initial append so it's written in the same API call
       const currentTime = formatHoldingsHistoryDate();
       const newRow = [
         currentTime, // Column A: Snapshot time
         positionUsername.trim(), // Column B: Name
         ticker.toUpperCase(), // Column C: Ticker
         totalShares.toString(), // Column D: Quantity
-        '', // Column E: Chat (empty initially)
+        newChatEntry, // Column E: Chat message (include it in the initial append)
       ];
       
-      // Append the new row to HoldingsHistory using web app
+      // Append the new row to HoldingsHistory using web app (with chat message included)
       recordApiRequest();
       const formData1 = new URLSearchParams();
       formData1.append('action', 'append');
@@ -451,46 +462,10 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
         throw new Error(`Failed to create HoldingsHistory record: ${errorMsg}`);
       }
       
-      // Get the row index of the newly created row
-      let newRowIndex = rows.length + 1; // Default to next row
-      
-      // Now add the chat message to the newly created row
-      const timestamp = new Date().toLocaleString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        hour: 'numeric', 
-        minute: '2-digit',
-        hour12: true 
-      });
-      const newChatEntry = `${postingUser}: ${chatMessage} (${timestamp})`;
-      
-      // Update the cell in column E using web app
-      const range = `HoldingsHistory!E${newRowIndex}`;
-      
-      recordApiRequest();
-      const formData2 = new URLSearchParams();
-      formData2.append('action', 'update');
-      formData2.append('sheet', 'HoldingsHistory');
-      formData2.append('range', range);
-      formData2.append('data', JSON.stringify([[newChatEntry]]));
-      const updateResponse = await fetch(WEB_APP_URL, {
-        method: 'POST',
-        // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
-        body: formData2,
-      });
-      
-      const updateData = await parseJsonResponse(updateResponse);
-      
-      if (!updateResponse.ok || !updateData.ok) {
-        const errorMsg = updateData.error || `HTTP ${updateResponse.status}`;
-        console.error('Web app error:', updateData);
-        throw new Error(`Failed to update chat: ${errorMsg}`);
-      }
-      
-      // Clear cache for HoldingsHistory since we updated it
+      // Clear cache for HoldingsHistory since we added a new row
       clearSheetCache('HoldingsHistory!A1:E10000');
       
-      return updateData;
+      return appendData;
     }
     
     // Existing record found - update it with chat message
