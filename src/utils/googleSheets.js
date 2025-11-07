@@ -2,7 +2,7 @@
 import { recordApiRequest } from './rateLimiter';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzGRfXtIjc7zsVVYw7md7lNwvTcj6votiqB8ErTY1PpIUuDwjx_esviuq8WGKLlyJoM/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzpn452N9by5LYEnWzkQoHmkZ_CnSqAcWmrWYvyGBcvrABWl2syv6F2U3wtjfcq7Qcy/exec';
 
 // Helper function to safely parse JSON responses from Google Apps Script
 // Checks Content-Type to ensure we're parsing JSON, not HTML error pages
