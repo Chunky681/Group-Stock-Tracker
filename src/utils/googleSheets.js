@@ -2,7 +2,7 @@
 import { recordApiRequest } from './rateLimiter';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyUyjarI6fHtPSXriJyYMIIRei0T2Fm2y5kpNQcR24ZerJYOd0odtK_8tKm58DuzIJW/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwsaSa6mKp0RhGpaFA0dBvAkOFy2M1h63LR4blmcABwzPiKw70jgeUBA0Yvh3VcBZHB/exec';
 
 // Helper function to safely parse JSON responses from Google Apps Script
 // Checks Content-Type to ensure we're parsing JSON, not HTML error pages
@@ -586,21 +586,31 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
     // Record API request before making the call
     recordApiRequest();
     
+    const rowData = [['', symbol]]; // Only write to columns A (empty) and B (symbol)
+    const dataString = JSON.stringify(rowData);
+    
+    console.log('Appending to Sheet2:', { symbol, dataString, rowData });
+    
     const formData = new URLSearchParams();
     formData.append('action', 'append');
     formData.append('sheet', 'Sheet2');
-    formData.append('data', JSON.stringify([['', symbol]])); // Only write to columns A (empty) and B (symbol)
+    formData.append('data', dataString);
+    
     const response = await fetch(WEB_APP_URL, {
       method: 'POST',
       // Don't set Content-Type - browser sets application/x-www-form-urlencoded automatically
       body: formData,
     });
     
+    console.log('Sheet2 append response status:', response.status, response.statusText);
+    
     const data = await parseJsonResponse(response);
+    
+    console.log('Sheet2 append response data:', data);
     
     if (!response.ok || !data.ok) {
       const errorMsg = data.error || `HTTP ${response.status}`;
-      console.error('Web app error:', data);
+      console.error('Web app error appending to Sheet2:', { response, data, symbol });
       throw new Error(`Failed to append symbol to Sheet2: ${errorMsg}`);
     }
     
@@ -609,7 +619,7 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
     
     return data;
   } catch (error) {
-    console.error('Error appending symbol to Sheet2:', error);
+    console.error('Error appending symbol to Sheet2:', { error, symbol, message: error.message });
     throw error;
   }
 };
