@@ -3,6 +3,7 @@ import { getAccessToken, initializeGoogleAuth } from './googleAuth';
 import { recordApiRequest } from './rateLimiter';
 
 const GOOGLE_SHEETS_API_URL = 'https://sheets.googleapis.com/v4/spreadsheets';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbw2kVDiNSzySrToRqMJZS4tI8vlOVRmmCK8ene0Tipb6_RuIm3DiZqpkxulvjGSOfLD/exec';
 
 // Cache for sheet data to reduce API calls
 const sheetDataCache = new Map();
@@ -127,50 +128,27 @@ export const readSheetData = async (range = 'Sheet1!A1:D1000', forceRefresh = fa
 };
 
 export const appendRow = async (rowData) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token (will initialize and prompt user login if needed)
-  let accessToken;
-  try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  // Extend range to include LastPositionChange column (E) if rowData has 5 elements
-  const range = rowData.length >= 5 
-    ? 'Sheet1!A:E'
-    : 'Sheet1!A:D';
-  
   try {
     // Record API request before making the call
     recordApiRequest();
     
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          values: [rowData],
-        }),
-      }
-    );
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sheet: 'Sheet1',
+        values: [rowData],
+        append: true,
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to append row: ${errorMsg}`);
     }
     
@@ -185,50 +163,31 @@ export const appendRow = async (rowData) => {
 };
 
 export const updateRow = async (rowIndex, rowData) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token (will initialize and prompt user login if needed)
-  let accessToken;
   try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  // Extend range to include LastPositionChange column (E) if rowData has 5 elements
-  const range = rowData.length >= 5 
-    ? `Sheet1!A${rowIndex}:E${rowIndex}`
-    : `Sheet1!A${rowIndex}:D${rowIndex}`;
-  
-  try {
+    // Extend range to include LastPositionChange column (E) if rowData has 5 elements
+    const range = rowData.length >= 5 
+      ? `Sheet1!A${rowIndex}:E${rowIndex}`
+      : `Sheet1!A${rowIndex}:D${rowIndex}`;
+    
     // Record API request before making the call
     recordApiRequest();
     
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          values: [rowData],
-        }),
-      }
-    );
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        range: range,
+        values: [rowData],
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to update row: ${errorMsg}`);
     }
     
@@ -242,6 +201,8 @@ export const updateRow = async (rowIndex, rowData) => {
   }
 };
 
+// NOTE: Delete operations still require OAuth because the web app script doesn't support delete operations
+// The web app only supports append and direct range writes
 export const deleteRow = async (rowIndex) => {
   const sheetId = getSheetId();
   
@@ -314,6 +275,7 @@ export const initializeSheet = async () => {
     if (!data || data.length === 0 || data[0][0] !== 'Username') {
       const headers = [['Username', 'Ticker', 'Shares', 'Last Updated']];
       try {
+        // Try to update row 1 (header row) using web app
         await updateRow(1, headers[0]);
       } catch (updateError) {
         // If update fails, try append instead
@@ -323,31 +285,15 @@ export const initializeSheet = async () => {
     }
   } catch (error) {
     console.error('Error initializing sheet:', error);
-    // Silently fail - sheet might already have headers or OAuth not configured
+    // Silently fail - sheet might already have headers
   }
 };
 
 // Update chat message in HoldingsHistory sheet
 // Finds the most recent record for the given username and ticker combination and updates/adds chat message
 export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser, positionUsername) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
   if (!positionUsername) {
     throw new Error('Position username is required to update chat');
-  }
-
-  // Get OAuth access token
-  let accessToken;
-  try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
   }
 
   try {
@@ -355,19 +301,14 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
     recordApiRequest();
     
     // First, read HoldingsHistory to find the most recent record for this username and ticker combination
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/HoldingsHistory!A1:E10000?key=${getApiKey()}`
-    );
+    const readResponse = await fetch(`${WEB_APP_URL}?range=HoldingsHistory!A1:E10000`);
+    const readData = await readResponse.json();
     
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(`Failed to read HoldingsHistory: ${data.error?.message || response.status}`);
+    if (!readResponse.ok || !readData.ok) {
+      throw new Error(`Failed to read HoldingsHistory: ${readData.error || readResponse.status}`);
     }
     
-    const rows = data.values || [];
-    // If HoldingsHistory only has headers or is empty, that's okay - we'll create a new record
-    // Only throw an error if the response itself failed
+    const rows = readData.values || [];
     if (rows.length === 0) {
       throw new Error('Failed to read HoldingsHistory: No data returned');
     }
@@ -414,14 +355,11 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       
       // Read Sheet1 to get current holdings for this user and ticker
       recordApiRequest();
-      const sheet1Response = await fetch(
-        `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/Sheet1!A1:D10000?key=${getApiKey()}`
-      );
-      
+      const sheet1Response = await fetch(`${WEB_APP_URL}?range=Sheet1!A1:D10000`);
       const sheet1Data = await sheet1Response.json();
       
-      if (!sheet1Response.ok) {
-        throw new Error(`Failed to read Sheet1: ${sheet1Data.error?.message || sheet1Response.status}`);
+      if (!sheet1Response.ok || !sheet1Data.ok) {
+        throw new Error(`Failed to read Sheet1: ${sheet1Data.error || sheet1Response.status}`);
       }
       
       const sheet1Rows = sheet1Data.values || [];
@@ -459,40 +397,30 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
         '', // Column E: Chat (empty initially)
       ];
       
-      // Append the new row to HoldingsHistory
+      // Append the new row to HoldingsHistory using web app
       recordApiRequest();
-      const appendResponse = await fetch(
-        `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/HoldingsHistory!A:E:append?valueInputOption=RAW`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            values: [newRow],
-          }),
-        }
-      );
+      const appendResponse = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sheet: 'HoldingsHistory',
+          values: [newRow],
+          append: true,
+        }),
+      });
       
       const appendData = await appendResponse.json();
       
-      if (!appendResponse.ok) {
-        const errorMsg = appendData.error?.message || `HTTP ${appendResponse.status}`;
-        console.error('Google Sheets API error:', appendData);
+      if (!appendResponse.ok || !appendData.ok) {
+        const errorMsg = appendData.error || `HTTP ${appendResponse.status}`;
+        console.error('Web app error:', appendData);
         throw new Error(`Failed to create HoldingsHistory record: ${errorMsg}`);
       }
       
       // Get the row index of the newly created row
-      // The append response should include updatedRange with the new row number
       let newRowIndex = rows.length + 1; // Default to next row
-      if (appendData.updates?.updatedRange) {
-        // Extract row number from range like "HoldingsHistory!A15:E15"
-        const match = appendData.updates.updatedRange.match(/!A(\d+):/);
-        if (match) {
-          newRowIndex = parseInt(match[1], 10);
-        }
-      }
       
       // Now add the chat message to the newly created row
       const timestamp = new Date().toLocaleString('en-US', { 
@@ -504,29 +432,26 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       });
       const newChatEntry = `${postingUser}: ${chatMessage} (${timestamp})`;
       
-      // Update the cell in column E
+      // Update the cell in column E using web app
       const range = `HoldingsHistory!E${newRowIndex}`;
       
       recordApiRequest();
-      const updateResponse = await fetch(
-        `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            values: [[newChatEntry]],
-          }),
-        }
-      );
+      const updateResponse = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          range: range,
+          values: [[newChatEntry]],
+        }),
+      });
       
       const updateData = await updateResponse.json();
       
-      if (!updateResponse.ok) {
-        const errorMsg = updateData.error?.message || `HTTP ${updateResponse.status}`;
-        console.error('Google Sheets API error:', updateData);
+      if (!updateResponse.ok || !updateData.ok) {
+        const errorMsg = updateData.error || `HTTP ${updateResponse.status}`;
+        console.error('Web app error:', updateData);
         throw new Error(`Failed to update chat: ${errorMsg}`);
       }
       
@@ -555,29 +480,26 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
       ? `${existingChats}\n${newChatEntry}`
       : newChatEntry;
     
-    // Update the cell in column E (index 4, so column E is column 5)
+    // Update the cell in column E using web app
     const range = `HoldingsHistory!E${mostRecentRowIndex}`;
     
     recordApiRequest();
-    const updateResponse = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          values: [[updatedChats]],
-        }),
-      }
-    );
+    const updateResponse = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        range: range,
+        values: [[updatedChats]],
+      }),
+    });
     
     const updateData = await updateResponse.json();
     
-    if (!updateResponse.ok) {
-      const errorMsg = updateData.error?.message || `HTTP ${updateResponse.status}`;
-      console.error('Google Sheets API error:', updateData);
+    if (!updateResponse.ok || !updateData.ok) {
+      const errorMsg = updateData.error || `HTTP ${updateResponse.status}`;
+      console.error('Web app error:', updateData);
       throw new Error(`Failed to update chat: ${errorMsg}`);
     }
     
@@ -593,47 +515,27 @@ export const updateHoldingsHistoryChat = async (ticker, chatMessage, postingUser
 
 // Sheet2 operations (Stock Data Sheet)
 export const appendRowToSheet2 = async (rowData) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token
-  let accessToken;
-  try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  const range = 'Sheet2!A:Q';
-  
   try {
     // Record API request before making the call
     recordApiRequest();
     
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          values: [rowData],
-        }),
-      }
-    );
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sheet: 'Sheet2',
+        values: [rowData],
+        append: true,
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to append row to Sheet2: ${errorMsg}`);
     }
     
@@ -650,50 +552,27 @@ export const appendRowToSheet2 = async (rowData) => {
 // Append a new row to Sheet2 but only write to the Symbol column (column B)
 // This preserves formulas in other columns (like Name in column C)
 export const appendRowToSheet2SymbolOnly = async (symbol) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token
-  let accessToken;
-  try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  // Append a row but only provide value for column B (Symbol)
-  // By only providing values for columns A and B (A empty, B with symbol),
-  // we leave other columns untouched so formulas can populate
-  const range = 'Sheet2!A:B';
-  
   try {
     // Record API request before making the call
     recordApiRequest();
     
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}:append?valueInputOption=RAW`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          values: [['', symbol]], // Only write to columns A (empty) and B (symbol)
-        }),
-      }
-    );
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sheet: 'Sheet2',
+        values: [['', symbol]], // Only write to columns A (empty) and B (symbol)
+        append: true,
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to append symbol to Sheet2: ${errorMsg}`);
     }
     
@@ -708,47 +587,28 @@ export const appendRowToSheet2SymbolOnly = async (symbol) => {
 };
 
 export const updateRowInSheet2 = async (rowIndex, rowData) => {
-  const sheetId = getSheetId();
-  
-  if (!sheetId) {
-    throw new Error('Google Sheet ID not configured. Please check your environment variables.');
-  }
-
-  // Get OAuth access token
-  let accessToken;
   try {
-    await initializeGoogleAuth();
-    accessToken = await getAccessToken();
-  } catch (error) {
-    console.error('OAuth error:', error);
-    throw new Error(`Authentication required: ${error.message}. Please ensure VITE_GOOGLE_CLIENT_ID is configured and you're signed in.`);
-  }
-
-  const range = `Sheet2!A${rowIndex}:Q${rowIndex}`;
-  
-  try {
+    const range = `Sheet2!A${rowIndex}:Q${rowIndex}`;
+    
     // Record API request before making the call
     recordApiRequest();
     
-    const response = await fetch(
-      `${GOOGLE_SHEETS_API_URL}/${sheetId}/values/${range}?valueInputOption=RAW`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          values: [rowData],
-        }),
-      }
-    );
+    const response = await fetch(WEB_APP_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        range: range,
+        values: [rowData],
+      }),
+    });
     
     const data = await response.json();
     
-    if (!response.ok) {
-      const errorMsg = data.error?.message || `HTTP ${response.status}`;
-      console.error('Google Sheets API error:', data);
+    if (!response.ok || !data.ok) {
+      const errorMsg = data.error || `HTTP ${response.status}`;
+      console.error('Web app error:', data);
       throw new Error(`Failed to update row in Sheet2: ${errorMsg}`);
     }
     
@@ -762,6 +622,7 @@ export const updateRowInSheet2 = async (rowIndex, rowData) => {
   }
 };
 
+// NOTE: Delete operations still require OAuth because the web app script doesn't support delete operations
 export const deleteRowFromSheet2 = async (rowIndex) => {
   const sheetId = getSheetId();
   
