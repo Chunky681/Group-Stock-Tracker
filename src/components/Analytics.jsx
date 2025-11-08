@@ -1467,7 +1467,7 @@ const Analytics = ({ refreshKey }) => {
       >
         <div className="flex items-center gap-2 mb-6">
           <TrendingUp className="w-5 h-5 text-primary-500" />
-          <h3 className="text-xl font-bold text-white">Stock Holdings</h3>
+          <h3 className="text-xl font-bold text-white">Asset Holdings</h3>
         </div>
         
         <div className="space-y-6">

@@ -516,37 +516,41 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                           ${holding.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                       </div>
-                      <motion.button
-                        onClick={() => handleStartEdit(holding.ticker)}
-                        className="btn-secondary flex items-center gap-2"
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        <Edit2 className="w-4 h-4" />
-                        Edit
-                      </motion.button>
-                      <motion.button
-                        onClick={() => handleDelete(holding.ticker)}
-                        disabled={isDeleting === holding.ticker}
-                        className="btn-secondary flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50"
-                        whileHover={{ scale: isDeleting === holding.ticker ? 1 : 1.05 }}
-                        whileTap={{ scale: isDeleting === holding.ticker ? 1 : 0.95 }}
-                      >
-                        {isDeleting === holding.ticker ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Deleting...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="w-4 h-4" />
-                            Delete
-                          </>
-                        )}
-                      </motion.button>
                     </div>
                   )}
                 </div>
+                {editingTicker !== holding.ticker && (
+                  <div className="flex items-center gap-2 ml-4">
+                    <motion.button
+                      onClick={() => handleStartEdit(holding.ticker)}
+                      className="btn-secondary flex items-center gap-2"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </motion.button>
+                    <motion.button
+                      onClick={() => handleDelete(holding.ticker)}
+                      disabled={isDeleting === holding.ticker}
+                      className="btn-secondary flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50"
+                      whileHover={{ scale: isDeleting === holding.ticker ? 1 : 1.05 }}
+                      whileTap={{ scale: isDeleting === holding.ticker ? 1 : 0.95 }}
+                    >
+                      {isDeleting === holding.ticker ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </>
+                      )}
+                    </motion.button>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}

@@ -127,7 +127,7 @@ function App() {
               >
                 <div className="flex items-center gap-2">
                   <Search className="w-5 h-5" />
-                  <span>Add Stocks</span>
+                  <span>Add Assets</span>
                 </div>
                 {activeTab === 'stocks' && (
                   <motion.div
