@@ -357,6 +357,7 @@ const Analytics = ({ refreshKey }) => {
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
   const holdingRefs = useRef(new Map()); // Store refs for each holding section to enable scrolling
+  const [pieChartDate, setPieChartDate] = useState(null); // Selected date for pie charts (null = current)
   useEffect(() => {
     // Determine if this is the initial load (refreshKey === 0)
     const isInitialLoad = refreshKey === 0;
@@ -880,24 +881,171 @@ const Analytics = ({ refreshKey }) => {
     return Object.values(grouped).sort((a, b) => b.totalValue - a.totalValue);
   }, [filteredPortfolio]);
 
+  // Get available weekly dates from historyData
+  const availableWeeklyDates = useMemo(() => {
+    if (!historyData || historyData.length === 0) return [];
+    
+    // Get unique weekly dates from historyData
+    const weeklyDates = new Set();
+    historyData.forEach(item => {
+      if (item.captureType?.toUpperCase() === 'WEEKLY' && item.date) {
+        const date = item.dateNormalized || item.date;
+        if (date instanceof Date) {
+          // Normalize to start of week (Monday)
+          const weekStart = new Date(date);
+          weekStart.setDate(date.getDate() - date.getDay() + 1); // Monday
+          weekStart.setHours(0, 0, 0, 0);
+          weeklyDates.add(weekStart.getTime());
+        }
+      }
+    });
+    
+    // Convert to sorted array of Date objects
+    return Array.from(weeklyDates)
+      .map(timestamp => new Date(timestamp))
+      .sort((a, b) => a.getTime() - b.getTime());
+  }, [historyData]);
+
+  // Find closest weekly snapshot date for a given date
+  const findClosestWeeklyDate = (targetDate) => {
+    if (!targetDate || availableWeeklyDates.length === 0) return null;
+    
+    const targetTime = targetDate.getTime();
+    let closest = availableWeeklyDates[0];
+    let minDiff = Math.abs(closest.getTime() - targetTime);
+    
+    for (const date of availableWeeklyDates) {
+      const diff = Math.abs(date.getTime() - targetTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = date;
+      }
+    }
+    
+    return closest;
+  };
+
+  // Calculate historical portfolio distribution
+  const getHistoricalDistribution = useMemo(() => {
+    return (selectedDate) => {
+      if (!selectedDate) {
+        return { byUser: {}, byStock: {} };
+      }
+      
+      // Find the closest weekly snapshot date
+      const snapshotDate = findClosestWeeklyDate(selectedDate);
+      if (!snapshotDate) {
+        return { byUser: {}, byStock: {} };
+      }
+      
+      // For "By User": Use historyData with WEEKLY captureType
+      const byUser = {};
+      if (historyData && historyData.length > 0) {
+        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+        const weeklyData = historyData.filter(item => {
+          if (!selectedUsers.has(item.username)) return false;
+          if (item.captureType?.toUpperCase() !== 'WEEKLY') return false;
+          const itemDate = item.dateNormalized || item.date;
+          if (!(itemDate instanceof Date)) return false;
+          const diff = Math.abs(itemDate.getTime() - snapshotDate.getTime());
+          return diff <= threeDaysMs;
+        });
+        
+        // Sum totalValue per user (take the latest entry per user)
+        const userMap = new Map();
+        weeklyData.forEach(item => {
+          const existing = userMap.get(item.username);
+          if (!existing || (item.dateNormalized || item.date) > (existing.dateNormalized || existing.date)) {
+            userMap.set(item.username, item);
+          }
+        });
+        
+        userMap.forEach((item, username) => {
+          byUser[username] = item.totalValue || 0;
+        });
+      }
+      
+      // For "By Stock": Use holdingsHistory filtered to the selected week
+      const byStock = {};
+      if (holdingsHistory && holdingsHistory.length > 0) {
+        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+        const filteredHoldings = holdingsHistory.filter(item => {
+          if (!selectedUsers.has(item.username)) return false;
+          const itemDate = item.date;
+          const diff = Math.abs(itemDate.getTime() - snapshotDate.getTime());
+          return diff <= threeDaysMs;
+        });
+        
+        // Group by user and ticker, taking the latest entry per user/ticker combination
+        const holdingsMap = new Map();
+        filteredHoldings.forEach(item => {
+          const key = `${item.username}_${item.ticker}`;
+          const existing = holdingsMap.get(key);
+          if (!existing || item.date > existing.date) {
+            holdingsMap.set(key, item);
+          }
+        });
+        
+        // Calculate values using current prices (since we don't have historical prices)
+        holdingsMap.forEach((holding) => {
+          const { username, ticker, shares } = holding;
+          
+          // Get price from current portfolio or use default
+          let price = 1.0; // Default for CASH/USD/REAL ESTATE
+          if (ticker === 'CASH' || ticker === 'USD') {
+            price = 1.0;
+          } else if (ticker === 'REAL ESTATE') {
+            price = 1.0;
+          } else {
+            // Find price from current portfolio
+            const portfolioItem = portfolio.find(p => p.ticker === ticker);
+            if (portfolioItem) {
+              price = portfolioItem.price || 0;
+            }
+          }
+          
+          const value = shares * price;
+          
+          // Sum by stock
+          const stockName = ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker === 'REAL ESTATE' ? 'REAL ESTATE' : ticker;
+          if (!byStock[stockName]) {
+            byStock[stockName] = 0;
+          }
+          byStock[stockName] += value;
+        });
+      }
+      
+      return { byUser, byStock };
+    };
+  }, [holdingsHistory, historyData, selectedUsers, portfolio, findClosestWeeklyDate]);
+
   // Data for total value pie chart (by user) - with stable reference to prevent unnecessary re-renders
   const totalValueByUserRef = useRef([]);
   const totalValueByUserKeyRef = useRef('');
   
   const totalValueByUser = useMemo(() => {
-    const userTotals = {};
-    filteredPortfolio.forEach(item => {
-      if (!userTotals[item.username]) {
-        userTotals[item.username] = 0;
-      }
-      userTotals[item.username] += item.value;
-    });
+    let userTotals = {};
+    
+    if (pieChartDate) {
+      // Use historical data
+      const historical = getHistoricalDistribution(pieChartDate);
+      userTotals = historical.byUser;
+    } else {
+      // Use current portfolio data
+      filteredPortfolio.forEach(item => {
+        if (!userTotals[item.username]) {
+          userTotals[item.username] = 0;
+        }
+        userTotals[item.username] += item.value;
+      });
+    }
     
     const newData = Object.entries(userTotals)
       .map(([username, value]) => ({
         name: username,
         value: Number(value.toFixed(2)),
       }))
+      .filter(item => item.value > 0) // Only include users with value > 0
       .sort((a, b) => b.value - a.value);
     
     // Compare with previous data using JSON string
@@ -910,26 +1058,35 @@ const Analytics = ({ refreshKey }) => {
     }
     
     return totalValueByUserRef.current;
-  }, [filteredPortfolio]);
+  }, [filteredPortfolio, pieChartDate, getHistoricalDistribution]);
 
   // Data for stock distribution pie chart (by stock across all selected users, including cash) - with stable reference
   const totalValueByStockRef = useRef([]);
   const totalValueByStockKeyRef = useRef('');
   
   const totalValueByStock = useMemo(() => {
-    const stockTotals = {};
-    filteredPortfolio.forEach(item => {
-      if (!stockTotals[item.ticker]) {
-        stockTotals[item.ticker] = 0;
-      }
-      stockTotals[item.ticker] += item.value;
-    });
+    let stockTotals = {};
+    
+    if (pieChartDate) {
+      // Use historical data
+      const historical = getHistoricalDistribution(pieChartDate);
+      stockTotals = historical.byStock;
+    } else {
+      // Use current portfolio data
+      filteredPortfolio.forEach(item => {
+        if (!stockTotals[item.ticker]) {
+          stockTotals[item.ticker] = 0;
+        }
+        stockTotals[item.ticker] += item.value;
+      });
+    }
     
     const newData = Object.entries(stockTotals)
       .map(([ticker, value]) => ({
         name: ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker === 'REAL ESTATE' ? 'REAL ESTATE' : ticker,
         value: Number(value.toFixed(2)),
       }))
+      .filter(item => item.value > 0) // Only include stocks with value > 0
       .sort((a, b) => {
         // CASH always first
         if (a.name === 'CASH') return -1;
@@ -951,7 +1108,7 @@ const Analytics = ({ refreshKey }) => {
     }
     
     return totalValueByStockRef.current;
-  }, [filteredPortfolio]);
+  }, [filteredPortfolio, pieChartDate, getHistoricalDistribution]);
 
   // Cache for stock distributions with stable references
   const stockDistributionCacheRef = useRef(new Map());
@@ -1213,18 +1370,18 @@ const Analytics = ({ refreshKey }) => {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-3"
+        className="flex items-center gap-2 sm:gap-3"
       >
         <motion.div
           initial={{ scale: 0, rotate: -180 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: 'spring', stiffness: 200 }}
         >
-          <BarChart3 className="w-8 h-8 text-primary-500" />
+          <BarChart3 className="w-6 h-6 sm:w-8 sm:h-8 text-primary-500" />
         </motion.div>
         <div>
-          <h2 className="text-3xl font-bold text-white">Analytics</h2>
-          <p className="text-slate-400">Portfolio insights for selected users</p>
+          <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white">Analytics</h2>
+          <p className="text-slate-400 text-sm sm:text-base">Portfolio insights for selected users</p>
         </div>
       </motion.div>
 
@@ -1233,17 +1390,17 @@ const Analytics = ({ refreshKey }) => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="card p-6"
+        className="card p-4 sm:p-6"
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4">
           <div className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-primary-500" />
-            <h3 className="text-xl font-bold text-white">Select Users</h3>
+            <Users className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
+            <h3 className="text-lg sm:text-xl font-bold text-white">Select Users</h3>
           </div>
           <div className="flex gap-2">
             <motion.button
               onClick={selectAll}
-              className="btn-secondary text-sm py-2 px-3"
+              className="btn-secondary text-xs sm:text-sm py-1.5 px-2 sm:py-2 sm:px-3"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -1251,7 +1408,7 @@ const Analytics = ({ refreshKey }) => {
             </motion.button>
             <motion.button
               onClick={deselectAll}
-              className="btn-secondary text-sm py-2 px-3"
+              className="btn-secondary text-xs sm:text-sm py-1.5 px-2 sm:py-2 sm:px-3"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -1260,7 +1417,7 @@ const Analytics = ({ refreshKey }) => {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
           {allUsers.map((username, index) => (
             <motion.button
               key={username}
@@ -1268,7 +1425,7 @@ const Analytics = ({ refreshKey }) => {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.05 }}
               onClick={() => toggleUser(username)}
-              className={`p-3 rounded-lg border transition-all text-left ${
+              className={`p-2 sm:p-3 rounded-lg border transition-all text-left ${
                 selectedUsers.has(username)
                   ? 'bg-primary-500/20 border-primary-500/50'
                   : 'bg-slate-700/30 border-slate-600/50 hover:bg-slate-700/50'
@@ -1298,25 +1455,25 @@ const Analytics = ({ refreshKey }) => {
       </motion.div>
 
       {/* Total Value and Dividends */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="card p-6"
+          className="card p-4 sm:p-6"
         >
           <div className="text-center">
-            <p className="text-slate-400 mb-2">Total Portfolio Value</p>
+            <p className="text-slate-400 mb-2 text-sm sm:text-base">Total Portfolio Value</p>
             <motion.p
               key={totalValue}
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
               transition={{ type: 'spring', stiffness: 200 }}
-              className="text-5xl font-bold text-white mb-4"
+              className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold text-white mb-3 sm:mb-4"
             >
               ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </motion.p>
-            <p className="text-sm text-slate-500">
+            <p className="text-xs sm:text-sm text-slate-500">
               Across {selectedUsers.size} {selectedUsers.size === 1 ? 'user' : 'users'}
             </p>
           </div>
@@ -1354,20 +1511,20 @@ const Analytics = ({ refreshKey }) => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.27 }}
-          className="card p-6"
+          className="card p-4 sm:p-6"
         >
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-primary-500" />
-              <h3 className="text-xl font-bold text-white">Portfolio Value Over Time</h3>
+              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
+              <h3 className="text-lg sm:text-xl font-bold text-white">Portfolio Value Over Time</h3>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
               {/* Chart Type Toggle */}
-              <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
+              <div className="flex gap-1 sm:gap-2 bg-slate-800 rounded-lg p-1">
                 <button
                   onClick={() => setChartType('line')}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  className={`px-2 py-1 sm:px-3 rounded text-[10px] sm:text-xs font-medium transition-colors ${
                     chartType === 'line'
                       ? 'bg-primary-500 text-white'
                       : 'text-slate-400 hover:text-slate-300'
@@ -1377,7 +1534,7 @@ const Analytics = ({ refreshKey }) => {
                 </button>
                 <button
                   onClick={() => setChartType('stacked')}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  className={`px-2 py-1 sm:px-3 rounded text-[10px] sm:text-xs font-medium transition-colors ${
                     chartType === 'stacked'
                       ? 'bg-primary-500 text-white'
                       : 'text-slate-400 hover:text-slate-300'
@@ -1388,12 +1545,12 @@ const Analytics = ({ refreshKey }) => {
               </div>
               
               {/* Time Period Toggles */}
-              <div className="flex gap-2 bg-slate-800 rounded-lg p-1">
+              <div className="flex gap-1 sm:gap-2 bg-slate-800 rounded-lg p-1 overflow-x-auto">
                 {['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map((period) => (
                   <button
                     key={period}
                     onClick={() => setTimePeriod(period)}
-                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    className={`px-2 py-1 sm:px-3 rounded text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${
                       timePeriod === period
                         ? 'bg-primary-500 text-white'
                         : 'text-slate-400 hover:text-slate-300'
@@ -1432,13 +1589,75 @@ const Analytics = ({ refreshKey }) => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="card p-6"
+          className="card p-4 sm:p-6"
         >
-          <div className="flex items-center gap-2 mb-6">
-            <PieChart className="w-5 h-5 text-primary-500" />
-            <h3 className="text-xl font-bold text-white">Total Value Distribution</h3>
+          <div className="flex items-center gap-2 mb-3 sm:mb-4">
+            <PieChart className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
+            <h3 className="text-lg sm:text-xl font-bold text-white">Total Value Distribution</h3>
           </div>
-          <div className="grid md:grid-cols-2 gap-6">
+          
+          {/* Date Slider */}
+          {availableWeeklyDates.length > 0 && (
+            <div className="mb-4 sm:mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                <label className="text-xs sm:text-sm text-slate-400">
+                  {pieChartDate ? `Viewing data from: ${pieChartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Current Portfolio'}
+                </label>
+                <button
+                  onClick={() => setPieChartDate(null)}
+                  className={`text-xs px-2 py-1 sm:px-3 rounded transition-colors self-start sm:self-auto ${
+                    pieChartDate === null
+                      ? 'bg-primary-500 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  Current
+                </button>
+              </div>
+              <div className="flex items-center gap-2 sm:gap-4">
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.max(0, availableWeeklyDates.length - 1)}
+                  value={(() => {
+                    if (!pieChartDate) return availableWeeklyDates.length - 1;
+                    const index = availableWeeklyDates.findIndex(d => d.getTime() === pieChartDate.getTime());
+                    return index >= 0 ? index : availableWeeklyDates.length - 1;
+                  })()}
+                  onChange={(e) => {
+                    const index = parseInt(e.target.value);
+                    if (index >= 0 && index < availableWeeklyDates.length) {
+                      setPieChartDate(availableWeeklyDates[index]);
+                    }
+                  }}
+                  className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                  style={{
+                    background: (() => {
+                      const maxIndex = Math.max(0, availableWeeklyDates.length - 1);
+                      const currentIndex = pieChartDate 
+                        ? (availableWeeklyDates.findIndex(d => d.getTime() === pieChartDate.getTime()) >= 0 
+                            ? availableWeeklyDates.findIndex(d => d.getTime() === pieChartDate.getTime())
+                            : maxIndex)
+                        : maxIndex;
+                      const percentage = maxIndex > 0 ? (currentIndex / maxIndex) * 100 : 0;
+                      return `linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ${percentage}%, #1e293b ${percentage}%, #1e293b 100%)`;
+                    })()
+                  }}
+                />
+                <div className="text-xs text-slate-400 min-w-[60px] sm:min-w-[80px] text-right text-[10px] sm:text-xs">
+                  {availableWeeklyDates.length > 0 && (
+                    <>
+                      {availableWeeklyDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {' - '}
+                      {availableWeeklyDates[availableWeeklyDates.length - 1].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
             {/* User Distribution Pie Chart */}
             <MemoizedUserDistributionChart 
               data={totalValueByUser}
@@ -1463,14 +1682,14 @@ const Analytics = ({ refreshKey }) => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="card p-6"
+        className="card p-4 sm:p-6"
       >
-        <div className="flex items-center gap-2 mb-6">
-          <TrendingUp className="w-5 h-5 text-primary-500" />
-          <h3 className="text-xl font-bold text-white">Asset Holdings</h3>
+        <div className="flex items-center gap-2 mb-4 sm:mb-6">
+          <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
+          <h3 className="text-lg sm:text-xl font-bold text-white">Asset Holdings</h3>
         </div>
         
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Separate CASH, REAL ESTATE, and Stocks */}
           {(() => {
             const cashHoldings = stockTotals.filter(s => s.isCash);

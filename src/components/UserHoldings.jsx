@@ -372,23 +372,23 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card p-6"
+        className="card p-4 sm:p-6"
       >
-        <div className="mb-4">
-          <h3 className="text-2xl font-bold text-white mb-2">
+        <div className="mb-3 sm:mb-4">
+          <h3 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">
             {selectedUser}'s Holdings
           </h3>
-          <p className="text-slate-400">View and edit your stock portfolio</p>
+          <p className="text-slate-400 text-sm sm:text-base">View and edit your stock portfolio</p>
         </div>
         
-        <div className="text-center mb-6">
-          <p className="text-slate-400 mb-2">Total Portfolio Value</p>
+        <div className="text-center mb-4 sm:mb-6">
+          <p className="text-slate-400 mb-2 text-sm sm:text-base">Total Portfolio Value</p>
           <motion.p
             key={totalValue}
             initial={{ scale: 0.8 }}
             animate={{ scale: 1 }}
             transition={{ type: 'spring', stiffness: 200 }}
-            className="text-4xl font-bold text-white"
+            className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white"
           >
             ${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </motion.p>
@@ -426,21 +426,21 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: index * 0.05, duration: 0.3 }}
-              className="card p-6"
+              className="card p-4 sm:p-6"
             >
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 mb-2">
                   {holding.isCash && (
-                    <DollarSign className="w-5 h-5 text-green-500" />
+                    <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-500" />
                   )}
                   {holding.isRealEstate && (
-                    <Home className="w-5 h-5" style={{ color: '#CC7722' }} />
+                    <Home className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: '#CC7722' }} />
                   )}
-                  <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : 'text-white'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
+                  <h4 className={`text-lg sm:text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : 'text-white'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
                     {holding.isCash ? 'CASH' : holding.isRealEstate ? 'REAL ESTATE' : holding.ticker}
                   </h4>
                 </div>
-                <p className="text-slate-400 text-sm mb-3">
+                <p className="text-slate-400 text-xs sm:text-sm mb-2 sm:mb-3">
                   {holding.isCash 
                     ? 'Cash Holdings'
                     : holding.isRealEstate
@@ -449,8 +449,8 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                 </p>
                 
                 {editingTicker === holding.ticker ? (
-                  <div className="flex items-center gap-3 mt-4">
-                    <div className="flex flex-col gap-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mt-3 sm:mt-4">
+                    <div className="flex flex-col gap-1 flex-1">
                       <label className="text-xs text-slate-400">
                         {holding.isCash ? 'Cash Amount ($)' : holding.isRealEstate ? 'Real Estate Value ($)' : 'Number of Shares'}
                       </label>
@@ -462,57 +462,60 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                           setError(null);
                         }}
                         placeholder={holding.isCash ? "0.00" : "0.00"}
-                        className="input-field w-32"
+                        className="input-field w-full sm:w-32"
                         min="0.01"
                         step="0.01"
                         autoFocus
                         disabled={isSaving}
                       />
                     </div>
-                    <motion.button
-                      onClick={handleSaveEdit}
-                      disabled={isSaving}
-                      className="btn-primary flex items-center gap-2"
-                      whileHover={{ scale: isSaving ? 1 : 1.05 }}
-                      whileTap={{ scale: isSaving ? 1 : 0.95 }}
-                    >
-                      {isSaving ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4" />
-                          Save
-                        </>
-                      )}
-                    </motion.button>
-                    <motion.button
-                      onClick={handleCancelEdit}
-                      disabled={isSaving}
-                      className="btn-secondary flex items-center gap-2"
-                      whileHover={{ scale: isSaving ? 1 : 1.05 }}
-                      whileTap={{ scale: isSaving ? 1 : 0.95 }}
-                    >
-                      <X className="w-4 h-4" />
-                      Cancel
-                    </motion.button>
+                    <div className="flex gap-2">
+                      <motion.button
+                        onClick={handleSaveEdit}
+                        disabled={isSaving}
+                        className="btn-primary flex items-center gap-2 text-sm px-4 py-2 sm:px-6 sm:py-3 flex-1 sm:flex-initial"
+                        whileHover={{ scale: isSaving ? 1 : 1.05 }}
+                        whileTap={{ scale: isSaving ? 1 : 0.95 }}
+                      >
+                        {isSaving ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                            <span className="hidden sm:inline">Saving...</span>
+                            <span className="sm:hidden">Save</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-3 h-3 sm:w-4 sm:h-4" />
+                            Save
+                          </>
+                        )}
+                      </motion.button>
+                      <motion.button
+                        onClick={handleCancelEdit}
+                        disabled={isSaving}
+                        className="btn-secondary flex items-center gap-2 text-sm px-4 py-2 sm:px-6 sm:py-3"
+                        whileHover={{ scale: isSaving ? 1 : 1.05 }}
+                        whileTap={{ scale: isSaving ? 1 : 0.95 }}
+                      >
+                        <X className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="hidden sm:inline">Cancel</span>
+                      </motion.button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between mt-4">
-                    <div className="flex items-center gap-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mt-3 sm:mt-4">
+                    <div className="flex items-center gap-4 sm:gap-6">
                       {!(holding.isRealEstate || holding.isCash) && (
                         <div>
-                          <p className="text-sm text-slate-400 mb-1">Shares</p>
-                          <p className="text-lg font-semibold text-white">
+                          <p className="text-xs sm:text-sm text-slate-400 mb-1">Shares</p>
+                          <p className="text-base sm:text-lg font-semibold text-white">
                             {holding.shares.toFixed(2)}
                           </p>
                         </div>
                       )}
                       <div>
-                        <p className="text-sm text-slate-400 mb-1">Total Value</p>
-                        <p className="text-lg font-semibold text-white">
+                        <p className="text-xs sm:text-sm text-slate-400 mb-1">Total Value</p>
+                        <p className="text-base sm:text-lg font-semibold text-white">
                           ${holding.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                       </div>
@@ -521,29 +524,29 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                       <div className="flex items-center gap-2">
                         <motion.button
                           onClick={() => handleStartEdit(holding.ticker)}
-                          className="btn-secondary flex items-center gap-2"
+                          className="btn-secondary flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-3 py-2 sm:px-4 sm:py-2"
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
-                          <Edit2 className="w-4 h-4" />
-                          Edit
+                          <Edit2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <span className="hidden sm:inline">Edit</span>
                         </motion.button>
                         <motion.button
                           onClick={() => handleDelete(holding.ticker)}
                           disabled={isDeleting === holding.ticker}
-                          className="btn-secondary flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50"
+                          className="btn-secondary flex items-center gap-1 sm:gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50 text-xs sm:text-sm px-3 py-2 sm:px-4 sm:py-2"
                           whileHover={{ scale: isDeleting === holding.ticker ? 1 : 1.05 }}
                           whileTap={{ scale: isDeleting === holding.ticker ? 1 : 0.95 }}
                         >
                           {isDeleting === holding.ticker ? (
                             <>
-                              <RefreshCw className="w-4 h-4 animate-spin" />
-                              Deleting...
+                              <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                              <span className="hidden sm:inline">Deleting...</span>
                             </>
                           ) : (
                             <>
-                              <Trash2 className="w-4 h-4" />
-                              Delete
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                              <span className="hidden sm:inline">Delete</span>
                             </>
                           )}
                         </motion.button>
