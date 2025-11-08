@@ -3287,6 +3287,20 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
     // Convert map to array and sort by timestamp
     let result = Array.from(timeMap.values()).sort((a, b) => a.timestamp - b.timestamp);
     
+    // Ensure all selected users have a value at every data point (0 if they don't have data yet)
+    // This ensures proper stacking - users appear at their first data point without empty pockets
+    result = result.map(point => {
+      const newPoint = { ...point };
+      Array.from(selectedUsers).forEach(username => {
+        // If user doesn't have a value at this point, set to 0
+        // This ensures they take no space until their first actual data point
+        if (newPoint[username] === undefined) {
+          newPoint[username] = 0;
+        }
+      });
+      return newPoint;
+    });
+    
     // Add final point using DailyTotals data
     if (dailyTotalsData && dailyTotalsData.length > 0) {
       // For 1D view, use current time; for other views, use the most recent date from DailyTotals
@@ -3363,6 +3377,17 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
       result.push(todayPoint);
     }
     
+    // Final pass: ensure all selected users have values at all points (should already be done, but double-check)
+    result = result.map(point => {
+      const newPoint = { ...point };
+      Array.from(selectedUsers).forEach(username => {
+        if (newPoint[username] === undefined) {
+          newPoint[username] = 0;
+        }
+      });
+      return newPoint;
+    });
+    
     return result;
   }, [historyData, dailyTotalsData, selectedUsers, timePeriod, currentTotalValue]);
   
@@ -3422,15 +3447,21 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
     const dataPoint = payload[0]?.payload;
     const formattedDate = dataPoint?.date || (label ? formatDateForChart(new Date(label), timePeriod) : String(label));
     
+    // Filter out users with $0 values
+    const nonZeroPayload = payload.filter(item => (item.value || 0) > 0);
+    
     let total = 0;
     payload.forEach(item => {
       total += item.value || 0;
     });
     
     return (
-      <div className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl">
+      <div 
+        className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
+        style={{ zIndex: 9999, position: 'relative' }}
+      >
         <p className="text-slate-400 mb-2">{formattedDate}</p>
-        {payload.map((item, index) => (
+        {nonZeroPayload.map((item, index) => (
           <p key={index} className="text-white" style={{ color: item.color }}>
             {item.name}: ${(item.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
@@ -3484,7 +3515,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
       </div>
       
       {/* Stacked Area Chart */}
-      <div className="h-80">
+      <div className="h-80" style={{ position: 'relative', zIndex: 1 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart 
             data={chartData} 
@@ -3514,6 +3545,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
             <Tooltip 
               content={<CustomTooltip />}
               allowEscapeViewBox={{ x: true, y: true }}
+              wrapperStyle={{ zIndex: 9999 }}
             />
             <Legend />
             {Array.from(selectedUsers).map((username, index) => (
