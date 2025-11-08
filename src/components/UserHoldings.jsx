@@ -428,80 +428,80 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
               transition={{ delay: index * 0.05, duration: 0.3 }}
               className="card p-6"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    {holding.isCash && (
-                      <DollarSign className="w-5 h-5 text-green-500" />
-                    )}
-                    {holding.isRealEstate && (
-                      <Home className="w-5 h-5" style={{ color: '#CC7722' }} />
-                    )}
-                    <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : 'text-white'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
-                      {holding.isCash ? 'CASH' : holding.isRealEstate ? 'REAL ESTATE' : holding.ticker}
-                    </h4>
-                  </div>
-                  <p className="text-slate-400 text-sm mb-3">
-                    {holding.isCash 
-                      ? 'Cash Holdings'
-                      : holding.isRealEstate
-                      ? 'Real Estate Holdings'
-                      : `$${holding.price.toFixed(2)} per share`}
-                  </p>
-                  
-                  {editingTicker === holding.ticker ? (
-                    <div className="flex items-center gap-3 mt-4">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs text-slate-400">
-                          {holding.isCash ? 'Cash Amount ($)' : holding.isRealEstate ? 'Real Estate Value ($)' : 'Number of Shares'}
-                        </label>
-                        <input
-                          type="number"
-                          value={editShares}
-                          onChange={(e) => {
-                            setEditShares(e.target.value);
-                            setError(null);
-                          }}
-                          placeholder={holding.isCash ? "0.00" : "0.00"}
-                          className="input-field w-32"
-                          min="0.01"
-                          step="0.01"
-                          autoFocus
-                          disabled={isSaving}
-                        />
-                      </div>
-                      <motion.button
-                        onClick={handleSaveEdit}
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2 mb-2">
+                  {holding.isCash && (
+                    <DollarSign className="w-5 h-5 text-green-500" />
+                  )}
+                  {holding.isRealEstate && (
+                    <Home className="w-5 h-5" style={{ color: '#CC7722' }} />
+                  )}
+                  <h4 className={`text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : 'text-white'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
+                    {holding.isCash ? 'CASH' : holding.isRealEstate ? 'REAL ESTATE' : holding.ticker}
+                  </h4>
+                </div>
+                <p className="text-slate-400 text-sm mb-3">
+                  {holding.isCash 
+                    ? 'Cash Holdings'
+                    : holding.isRealEstate
+                    ? 'Real Estate Holdings'
+                    : `$${holding.price.toFixed(2)} per share`}
+                </p>
+                
+                {editingTicker === holding.ticker ? (
+                  <div className="flex items-center gap-3 mt-4">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-400">
+                        {holding.isCash ? 'Cash Amount ($)' : holding.isRealEstate ? 'Real Estate Value ($)' : 'Number of Shares'}
+                      </label>
+                      <input
+                        type="number"
+                        value={editShares}
+                        onChange={(e) => {
+                          setEditShares(e.target.value);
+                          setError(null);
+                        }}
+                        placeholder={holding.isCash ? "0.00" : "0.00"}
+                        className="input-field w-32"
+                        min="0.01"
+                        step="0.01"
+                        autoFocus
                         disabled={isSaving}
-                        className="btn-primary flex items-center gap-2"
-                        whileHover={{ scale: isSaving ? 1 : 1.05 }}
-                        whileTap={{ scale: isSaving ? 1 : 0.95 }}
-                      >
-                        {isSaving ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <Save className="w-4 h-4" />
-                            Save
-                          </>
-                        )}
-                      </motion.button>
-                      <motion.button
-                        onClick={handleCancelEdit}
-                        disabled={isSaving}
-                        className="btn-secondary flex items-center gap-2"
-                        whileHover={{ scale: isSaving ? 1 : 1.05 }}
-                        whileTap={{ scale: isSaving ? 1 : 0.95 }}
-                      >
-                        <X className="w-4 h-4" />
-                        Cancel
-                      </motion.button>
+                      />
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-6 mt-4">
+                    <motion.button
+                      onClick={handleSaveEdit}
+                      disabled={isSaving}
+                      className="btn-primary flex items-center gap-2"
+                      whileHover={{ scale: isSaving ? 1 : 1.05 }}
+                      whileTap={{ scale: isSaving ? 1 : 0.95 }}
+                    >
+                      {isSaving ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          Save
+                        </>
+                      )}
+                    </motion.button>
+                    <motion.button
+                      onClick={handleCancelEdit}
+                      disabled={isSaving}
+                      className="btn-secondary flex items-center gap-2"
+                      whileHover={{ scale: isSaving ? 1 : 1.05 }}
+                      whileTap={{ scale: isSaving ? 1 : 0.95 }}
+                    >
+                      <X className="w-4 h-4" />
+                      Cancel
+                    </motion.button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between mt-4">
+                    <div className="flex items-center gap-6">
                       {!(holding.isRealEstate || holding.isCash) && (
                         <div>
                           <p className="text-sm text-slate-400 mb-1">Shares</p>
@@ -517,38 +517,38 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                         </p>
                       </div>
                     </div>
-                  )}
-                </div>
-                {editingTicker !== holding.ticker && (
-                  <div className="flex items-center gap-2 ml-4">
-                    <motion.button
-                      onClick={() => handleStartEdit(holding.ticker)}
-                      className="btn-secondary flex items-center gap-2"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      Edit
-                    </motion.button>
-                    <motion.button
-                      onClick={() => handleDelete(holding.ticker)}
-                      disabled={isDeleting === holding.ticker}
-                      className="btn-secondary flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50"
-                      whileHover={{ scale: isDeleting === holding.ticker ? 1 : 1.05 }}
-                      whileTap={{ scale: isDeleting === holding.ticker ? 1 : 0.95 }}
-                    >
-                      {isDeleting === holding.ticker ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Deleting...
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </>
-                      )}
-                    </motion.button>
+                    {editingTicker !== holding.ticker && (
+                      <div className="flex items-center gap-2">
+                        <motion.button
+                          onClick={() => handleStartEdit(holding.ticker)}
+                          className="btn-secondary flex items-center gap-2"
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Edit
+                        </motion.button>
+                        <motion.button
+                          onClick={() => handleDelete(holding.ticker)}
+                          disabled={isDeleting === holding.ticker}
+                          className="btn-secondary flex items-center gap-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border-red-500/50"
+                          whileHover={{ scale: isDeleting === holding.ticker ? 1 : 1.05 }}
+                          whileTap={{ scale: isDeleting === holding.ticker ? 1 : 0.95 }}
+                        >
+                          {isDeleting === holding.ticker ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              Deleting...
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </>
+                          )}
+                        </motion.button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
