@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, User, Search, BarChart3, DollarSign, Home } from 'lucide-react';
+import { TrendingUp, User, Search, BarChart3, DollarSign, Home, Coins } from 'lucide-react';
 import StockSearch from './components/StockSearch';
 import AddStockForm from './components/AddStockForm';
 import AddCashForm from './components/AddCashForm';
 import AddRealEstateForm from './components/AddRealEstateForm';
+import CryptoSearch from './components/CryptoSearch';
+import AddCryptoForm from './components/AddCryptoForm';
 import UserSelector from './components/UserSelector';
 import UserHoldings from './components/UserHoldings';
 import Analytics from './components/Analytics';
@@ -12,15 +14,17 @@ import RefreshTimer from './components/RefreshTimer';
 
 function App() {
   const [selectedStock, setSelectedStock] = useState(null);
+  const [selectedCrypto, setSelectedCrypto] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' or 'stocks'
   const [portfolioKey, setPortfolioKey] = useState(0);
-  const [addType, setAddType] = useState('stock'); // 'stock', 'cash', or 'realestate'
+  const [addType, setAddType] = useState('stock'); // 'stock', 'cash', 'realestate', or 'crypto'
   
   // Refs for scrolling to form components
   const stockFormRef = useRef(null);
   const cashFormRef = useRef(null);
   const realEstateFormRef = useRef(null);
+  const cryptoFormRef = useRef(null);
 
   const handleStockSelected = (stockData) => {
     setSelectedStock(stockData);
@@ -35,6 +39,15 @@ function App() {
     // Force portfolio to refresh
     setPortfolioKey(prev => prev + 1);
     setSelectedStock(null);
+    setSelectedCrypto(null);
+  };
+
+  const handleCryptoSelected = (cryptoData) => {
+    setSelectedCrypto(cryptoData);
+    // Scroll to the crypto form after a short delay to ensure DOM is updated
+    setTimeout(() => {
+      cryptoFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 200);
   };
 
   const handleUserSelect = (username) => {
@@ -54,6 +67,10 @@ function App() {
     } else if (addType === 'realestate' && realEstateFormRef.current) {
       setTimeout(() => {
         realEstateFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    } else if (addType === 'crypto' && cryptoFormRef.current) {
+      setTimeout(() => {
+        cryptoFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     }
   }, [addType]);
@@ -220,10 +237,15 @@ function App() {
                                   <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-500" />
                                   Add Cash Holdings
                                 </>
-                              ) : (
+                              ) : addType === 'realestate' ? (
                                 <>
                                   <Home className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: '#CC7722' }} />
                                   Add Real Estate Holdings
+                                </>
+                              ) : (
+                                <>
+                                  <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
+                                  Add Crypto Holdings
                                 </>
                               )}
                             </h4>
@@ -233,6 +255,7 @@ function App() {
                                 onClick={() => {
                                   setAddType('stock');
                                   setSelectedStock(null);
+                                  setSelectedCrypto(null);
                                 }}
                                 className={`px-2 py-1 sm:px-3 rounded text-xs sm:text-sm font-medium transition-colors ${
                                   addType === 'stock'
@@ -247,6 +270,7 @@ function App() {
                                 onClick={() => {
                                   setAddType('cash');
                                   setSelectedStock(null);
+                                  setSelectedCrypto(null);
                                 }}
                                 className={`px-2 py-1 sm:px-3 rounded text-xs sm:text-sm font-medium transition-colors ${
                                   addType === 'cash'
@@ -261,6 +285,7 @@ function App() {
                                 onClick={() => {
                                   setAddType('realestate');
                                   setSelectedStock(null);
+                                  setSelectedCrypto(null);
                                 }}
                                 className={`px-2 py-1 sm:px-3 rounded text-xs sm:text-sm font-medium transition-colors ${
                                   addType === 'realestate'
@@ -270,6 +295,21 @@ function App() {
                                 style={addType === 'realestate' ? { backgroundColor: '#CC7722' } : {}}
                               >
                                 Real Estate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddType('crypto');
+                                  setSelectedStock(null);
+                                  setSelectedCrypto(null);
+                                }}
+                                className={`px-2 py-1 sm:px-3 rounded text-xs sm:text-sm font-medium transition-colors ${
+                                  addType === 'crypto'
+                                    ? 'bg-yellow-500 text-white'
+                                    : 'text-slate-400 hover:text-slate-300'
+                                }`}
+                              >
+                                Crypto
                               </button>
                             </div>
                           </div>
@@ -292,9 +332,19 @@ function App() {
                                 refreshKey={portfolioKey}
                               />
                             </div>
-                          ) : (
+                          ) : addType === 'realestate' ? (
                             <div ref={realEstateFormRef}>
                               <AddRealEstateForm
+                                selectedUser={selectedUser}
+                                onSuccess={handleStockAdded}
+                                refreshKey={portfolioKey}
+                              />
+                            </div>
+                          ) : (
+                            <div ref={cryptoFormRef}>
+                              <CryptoSearch onCryptoSelected={handleCryptoSelected} />
+                              <AddCryptoForm
+                                cryptoData={selectedCrypto}
                                 selectedUser={selectedUser}
                                 onSuccess={handleStockAdded}
                                 refreshKey={portfolioKey}

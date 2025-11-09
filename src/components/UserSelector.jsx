@@ -38,7 +38,30 @@ const UserSelector = ({ selectedUser, onUserSelect, refreshKey, compact = false 
       const uniqueTickers = [...new Set(rows.map(row => row[1]?.trim().toUpperCase()))];
       const priceMap = {};
       
-      // Fetch prices for all tickers (handle cash and real estate separately)
+      // Load crypto prices from Crypto sheet
+      let cryptoMap = new Map();
+      try {
+        const cryptoData = await readSheetData('Crypto!A1:E1000', forceRefresh);
+        if (cryptoData && cryptoData.length > 1) {
+          const header = cryptoData[0];
+          const symbolColIndex = header.indexOf('Symbol');
+          const priceColIndex = header.indexOf('Price_USD');
+          
+          if (symbolColIndex !== -1 && priceColIndex !== -1) {
+            cryptoData.slice(1).forEach(row => {
+              const symbol = row[symbolColIndex]?.trim().toUpperCase();
+              const price = parseFloat(row[priceColIndex]) || 0;
+              if (symbol && price > 0) {
+                cryptoMap.set(symbol, price);
+              }
+            });
+          }
+        }
+      } catch (cryptoError) {
+        console.error('Error loading crypto prices:', cryptoError);
+      }
+      
+      // Fetch prices for all tickers (handle cash, real estate, and crypto separately)
       for (const ticker of uniqueTickers) {
         // Cash is always $1.00 per "share" (dollar)
         if (ticker === 'CASH' || ticker === 'USD') {
@@ -52,6 +75,13 @@ const UserSelector = ({ selectedUser, onUserSelect, refreshKey, compact = false 
           continue;
         }
         
+        // Check if ticker is a crypto symbol
+        if (cryptoMap.has(ticker)) {
+          priceMap[ticker] = cryptoMap.get(ticker);
+          continue;
+        }
+        
+        // Otherwise, try to fetch as stock
         try {
           const quote = await getStockQuote(ticker);
           priceMap[ticker] = quote.price;
