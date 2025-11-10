@@ -504,7 +504,10 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
                   {holding.isCrypto && (
                     <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500" />
                   )}
-                  <h4 className={`text-lg sm:text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : holding.isCrypto ? 'text-yellow-500' : 'text-white'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
+                  {!(holding.isCash || holding.isRealEstate || holding.isCrypto) && (
+                    <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
+                  )}
+                  <h4 className={`text-lg sm:text-xl font-bold mb-0 ${holding.isCash ? 'text-green-500' : holding.isRealEstate ? 'text-amber-600' : holding.isCrypto ? 'text-yellow-500' : 'text-blue-500'}`} style={holding.isRealEstate ? { color: '#CC7722' } : {}}>
                     {holding.isCash ? 'CASH' : holding.isRealEstate ? 'REAL ESTATE' : holding.ticker}
                   </h4>
                 </div>
