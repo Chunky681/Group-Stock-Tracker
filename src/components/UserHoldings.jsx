@@ -182,11 +182,8 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
       
       const holdingsArray = Array.from(holdingsMap.values())
         .sort((a, b) => {
-          if (a.ticker === 'CASH' || a.ticker === 'USD') return -1;
-          if (b.ticker === 'CASH' || b.ticker === 'USD') return 1;
-          if (a.ticker === 'REAL ESTATE') return -1;
-          if (b.ticker === 'REAL ESTATE') return 1;
-          return a.ticker.localeCompare(b.ticker);
+          // Sort by value (highest to lowest)
+          return b.value - a.value;
         });
       
       // Store cryptoMap for use in refreshPrices
@@ -263,7 +260,10 @@ const UserHoldings = ({ selectedUser, onUpdate, refreshKey }) => {
         ...holding,
         price: priceMap[holding.ticker] || holding.price,
         value: holding.shares * (priceMap[holding.ticker] || holding.price),
-      })));
+      })).sort((a, b) => {
+        // Sort by value (highest to lowest)
+        return b.value - a.value;
+      }));
     } catch (error) {
       console.error('Error refreshing prices:', error);
     } finally {
