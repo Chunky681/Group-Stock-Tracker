@@ -565,7 +565,7 @@ const Analytics = ({ refreshKey }) => {
     }
   };
 
-  // Load history data from History sheet (columns A-G: Timestamp, Username, Total Value (USD), Total Cash Value (USD), Total Real Estate Value (USD), Total Crypto Value (USD), CaptureType)
+  // Load history data from History sheet (columns A-G: Timestamp, Username, Total Stock Value (USD), Total Cash Value (USD), Total Real Estate Value (USD), Total Crypto Value (USD), CaptureType)
   const loadHistoryData = async (forceRefresh = false) => {
     try {
       const data = await readSheetData('History!A1:G10000', forceRefresh);
@@ -581,14 +581,14 @@ const Analytics = ({ refreshKey }) => {
       const history = rows.map(row => {
         const dateStr = row[0]?.trim() || '';
         const username = row[1]?.trim() || '';
-        const totalValue = parseFloat(row[2]) || 0;
+        const stockValue = parseFloat(row[2]) || 0; // Column C: Total Stock Value (USD)
         const cashValue = parseFloat(row[3]) || 0; // Column D: Total Cash Value
         const realEstateValue = parseFloat(row[4]) || 0; // Column E: Total Real Estate Value
         const cryptoValue = parseFloat(row[5]) || 0; // Column F: Total Crypto Value
         const captureType = row[6]?.trim()?.toUpperCase() || ''; // Column G: CaptureType
         
-        // Calculate stock value (total - cash - real estate - crypto)
-        const stockValue = totalValue - cashValue - realEstateValue - cryptoValue;
+        // Calculate total value (stock + cash + real estate + crypto)
+        const totalValue = stockValue + cashValue + realEstateValue + cryptoValue;
         
         // Parse date (handle MM/DD/YYYY format and ISO timestamp format from Google Sheets)
         let date;
@@ -3507,7 +3507,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
     // For 1D view, start from 12:00 AM (midnight) of today, not 24 hours ago
     const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
-    // Filter portfolio records from today (starting at midnight) and selected users
+    // Filter portfolio records from today (starting at midnight), selected users, and selected asset types
     const recentChanges = portfolio.filter(item => {
       if (!selectedUsers.has(item.username)) {
         return false;
@@ -3523,7 +3523,17 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
       }
       
       // Only include changes from today (starting at midnight)
-      return updateDate >= todayMidnight && updateDate <= now;
+      if (!(updateDate >= todayMidnight && updateDate <= now)) {
+        return false;
+      }
+      
+      // Filter by selected asset types
+      if (item.isCash && !selectedAssetTypes.has('cash')) return false;
+      if (item.isRealEstate && !selectedAssetTypes.has('realestate')) return false;
+      if (item.isCrypto && !selectedAssetTypes.has('crypto')) return false;
+      if (!item.isCash && !item.isRealEstate && !item.isCrypto && !selectedAssetTypes.has('stocks')) return false;
+      
+      return true;
     });
     
     // Group by timestamp and username to get unique position changes
@@ -3614,7 +3624,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
     
     // Sort by timestamp
     return result.sort((a, b) => a.timestamp - b.timestamp);
-  }, [portfolio, selectedUsers, timePeriod, chartData, currentTotalValue]);
+  }, [portfolio, selectedUsers, timePeriod, chartData, currentTotalValue, selectedAssetTypes]);
   
   // Merge position changes into chart data for better tooltip integration
   const chartDataWithPositionChanges = useMemo(() => {
