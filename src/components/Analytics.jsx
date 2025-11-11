@@ -1815,10 +1815,10 @@ const Analytics = ({ refreshKey }) => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.27 }}
-          className="card p-4 sm:p-6"
+          className="card p-4 sm:p-6 max-[600px]:px-0 max-[600px]:mx-[-0.75rem] max-[600px]:w-[calc(100%+1.5rem)]"
           style={{ position: 'relative', zIndex: 1000 }}
         >
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4 max-[600px]:px-4">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
               <h3 className="text-lg sm:text-xl font-bold text-white">Portfolio Value Over Time</h3>
@@ -3094,6 +3094,19 @@ const calculateFilteredValue = (item, selectedAssetTypes) => {
 };
 
 const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTotalValue, portfolio = [], selectedAssetTypes = new Set(['stocks', 'cash', 'realestate', 'crypto']) }) => {
+  // Detect if screen is below 600px
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsSmallScreen(window.innerWidth < 600);
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+  
   // Filter and process history data
   const chartData = useMemo(() => {
     const now = new Date();
@@ -3714,8 +3727,16 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
   const maxValue = Math.max(...values);
   const range = maxValue - minValue;
   
-  // Add 10% padding above and below the data range for better visualization
-  const padding = range * 0.1 || (maxValue * 0.05) || 1000; // At least 5% padding or $1000
+  // For small ranges (like daily fluctuations), use tighter padding to show variation better
+  // For larger ranges, use standard padding
+  let padding;
+  if (range < maxValue * 0.05) {
+    // If range is less than 5% of max value, use tighter padding (2% of range or $500, whichever is larger)
+    padding = Math.max(range * 0.02, 500);
+  } else {
+    // Standard 10% padding for larger ranges
+    padding = range * 0.1 || (maxValue * 0.05) || 1000;
+  }
   const yAxisMin = Math.max(0, minValue - padding); // Don't go below 0
   const yAxisMax = maxValue + padding;
   
@@ -3733,7 +3754,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
   })() : undefined;
   
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-[600px]:px-4">
       {/* Summary Stats */}
       <div className="flex items-end gap-6">
         <div>
@@ -3760,7 +3781,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
         <ResponsiveContainer width="100%" height="100%">
           <LineChart 
             data={chartDataWithPositionChanges} 
-            margin={{ top: 5, right: 20, bottom: 5, left: 20 }}
+            margin={{ top: 5, right: 20, bottom: 5, left: isSmallScreen ? 5 : 20 }}
             syncId="portfolioChart"
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
@@ -3779,11 +3800,12 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
               }}
             />
             <YAxis 
-              stroke="#94a3b8"
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
-              axisLine={{ stroke: '#475569' }}
+              stroke={isSmallScreen ? 'transparent' : '#94a3b8'}
+              tick={{ fill: isSmallScreen ? 'transparent' : '#94a3b8', fontSize: 12 }}
+              axisLine={{ stroke: isSmallScreen ? 'transparent' : '#475569' }}
               tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
               domain={[yAxisMin, yAxisMax]}
+              width={isSmallScreen ? 0 : undefined}
             />
             <Tooltip
               content={(props) => {
@@ -3998,6 +4020,19 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
 
 // Stacked Area Chart Component - Shows each user's value separately
 const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePeriod, currentTotalValue, selectedAssetTypes = new Set(['stocks', 'cash', 'realestate', 'crypto']) }) => {
+  // Detect if screen is below 600px
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsSmallScreen(window.innerWidth < 600);
+    };
+    
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+  
   // Process history data to create stacked area chart data
   const chartData = useMemo(() => {
     const now = new Date();
@@ -4302,15 +4337,26 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
     }
     
     let maxValue = 0;
+    let minValue = Infinity;
     chartData.forEach(point => {
       let pointTotal = 0;
       Array.from(selectedUsers).forEach(username => {
         pointTotal += point[username] || 0;
       });
       maxValue = Math.max(maxValue, pointTotal);
+      minValue = Math.min(minValue, pointTotal);
     });
     
-    const padding = maxValue * 0.1;
+    const range = maxValue - minValue;
+    // For small ranges (like daily fluctuations), use tighter padding to show variation better
+    let padding;
+    if (range < maxValue * 0.05) {
+      // If range is less than 5% of max value, use tighter padding (2% of range or $500, whichever is larger)
+      padding = Math.max(range * 0.02, 500);
+    } else {
+      // Standard 10% padding for larger ranges
+      padding = maxValue * 0.1 || 1000;
+    }
     return [0, maxValue + padding];
   }, [chartData, selectedUsers]);
   
@@ -4400,7 +4446,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
   }
   
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-[600px]:px-4">
       {/* Summary Stats */}
       <div className="flex items-end gap-6">
         <div>
@@ -4427,7 +4473,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart 
             data={chartData} 
-            margin={{ top: 5, right: 50, bottom: 5, left: 20 }}
+            margin={{ top: 5, right: 50, bottom: 5, left: isSmallScreen ? 5 : 20 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
             <XAxis 
@@ -4444,11 +4490,12 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
               }}
             />
             <YAxis 
-              stroke="#94a3b8"
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
-              axisLine={{ stroke: '#475569' }}
+              stroke={isSmallScreen ? 'transparent' : '#94a3b8'}
+              tick={{ fill: isSmallScreen ? 'transparent' : '#94a3b8', fontSize: 12 }}
+              axisLine={{ stroke: isSmallScreen ? 'transparent' : '#475569' }}
               tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
               domain={yAxisDomain}
+              width={isSmallScreen ? 0 : undefined}
             />
             <Tooltip 
               content={<CustomTooltip />}
