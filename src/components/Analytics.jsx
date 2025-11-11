@@ -4351,11 +4351,15 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
         style={{ zIndex: 9999, position: 'relative' }}
       >
         <p className="text-slate-400 mb-2">{formattedDate}</p>
-        {nonZeroPayload.map((item, index) => (
-          <p key={index} className="text-white" style={{ color: item.color }}>
-            {item.name}: ${(item.value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        ))}
+        {nonZeroPayload.map((item, index) => {
+          const value = item.value || 0;
+          const percentage = total > 0 ? (value / total) * 100 : 0;
+          return (
+            <p key={index} className="text-white" style={{ color: item.color }}>
+              {item.name}: ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({percentage.toFixed(2)}%)
+            </p>
+          );
+        })}
         <p className="text-white font-bold mt-2 border-t border-slate-700 pt-2">
           Total: ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </p>
