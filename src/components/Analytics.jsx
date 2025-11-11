@@ -1816,6 +1816,7 @@ const Analytics = ({ refreshKey }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.27 }}
           className="card p-4 sm:p-6"
+          style={{ position: 'relative', zIndex: 1000 }}
         >
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4">
             <div className="flex items-center gap-2">
@@ -1896,6 +1897,7 @@ const Analytics = ({ refreshKey }) => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
           className="card p-4 sm:p-6"
+          style={{ position: 'relative', zIndex: 1 }}
         >
           <div className="flex items-center gap-2 mb-3 sm:mb-4">
             <PieChart className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
@@ -4348,7 +4350,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
     return (
       <div 
         className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl"
-        style={{ zIndex: 9999, position: 'relative' }}
+        style={{ zIndex: 999999 }}
       >
         <p className="text-slate-400 mb-2">{formattedDate}</p>
         {nonZeroPayload.map((item, index) => {
@@ -4409,7 +4411,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
       </div>
       
       {/* Stacked Area Chart */}
-      <div className="h-80" style={{ position: 'relative', zIndex: 1 }}>
+      <div className="h-80" style={{ position: 'relative', zIndex: 10000 }}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart 
             data={chartData} 
@@ -4439,7 +4441,7 @@ const StackedAreaChart = ({ historyData, dailyTotalsData, selectedUsers, timePer
             <Tooltip 
               content={<CustomTooltip />}
               allowEscapeViewBox={{ x: true, y: true }}
-              wrapperStyle={{ zIndex: 9999 }}
+              wrapperStyle={{ zIndex: 999999, pointerEvents: 'none' }}
             />
             <Legend />
             {Array.from(selectedUsers).map((username, index) => (

@@ -34,3 +34,18 @@
            transition-all duration-200 border border-slate-600 text-sm sm:text-base;
   }
 }
+
+/* Ensure Recharts tooltips always appear on top */
+.recharts-tooltip-wrapper {
+  z-index: 999999 !important;
+  pointer-events: none !important;
+}
+
+.recharts-default-tooltip {
+  z-index: 999999 !important;
+}
+
+/* Ensure tooltip content appears above everything */
+.recharts-tooltip-wrapper > div {
+  z-index: 999999 !important;
+}
