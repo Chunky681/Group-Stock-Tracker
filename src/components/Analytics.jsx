@@ -3499,17 +3499,29 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
     return result;
   }, [historyData, selectedUsers, timePeriod, currentTotalValue, selectedAssetTypes]);
   
-  // Calculate position change markers for 1D view
+  // Calculate position change markers for 1D, 1W, and 1M views
   const positionChanges = useMemo(() => {
-    if (timePeriod !== '1D' || !portfolio || portfolio.length === 0 || chartData.length === 0) {
+    if ((timePeriod !== '1D' && timePeriod !== '1W' && timePeriod !== '1M') || !portfolio || portfolio.length === 0 || chartData.length === 0) {
       return [];
     }
     
     const now = new Date();
-    // For 1D view, start from 12:00 AM (midnight) of today, not 24 hours ago
-    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let startDate;
     
-    // Filter portfolio records from today (starting at midnight), selected users, and selected asset types
+    if (timePeriod === '1D') {
+      // For 1D view, start from 12:00 AM (midnight) of today, not 24 hours ago
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (timePeriod === '1W') {
+      // For 1W view, start from 7 days ago
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 7);
+    } else if (timePeriod === '1M') {
+      // For 1M view, start from 30 days ago
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 30);
+    }
+    
+    // Filter portfolio records from the selected time period, selected users, and selected asset types
     const recentChanges = portfolio.filter(item => {
       if (!selectedUsers.has(item.username)) {
         return false;
@@ -3524,8 +3536,8 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
         return false;
       }
       
-      // Only include changes from today (starting at midnight)
-      if (!(updateDate >= todayMidnight && updateDate <= now)) {
+      // Only include changes from the selected time period
+      if (!(updateDate >= startDate && updateDate <= now)) {
         return false;
       }
       
@@ -3630,7 +3642,7 @@ const PortfolioValueChart = ({ historyData, selectedUsers, timePeriod, currentTo
   
   // Merge position changes into chart data for better tooltip integration
   const chartDataWithPositionChanges = useMemo(() => {
-    if (timePeriod !== '1D' || positionChanges.length === 0) {
+    if ((timePeriod !== '1D' && timePeriod !== '1W' && timePeriod !== '1M') || positionChanges.length === 0) {
       return chartData;
     }
     
