@@ -357,7 +357,6 @@ const Analytics = ({ refreshKey }) => {
   const [expandedHoldings, setExpandedHoldings] = useState(new Set()); // Track which holdings are expanded
   const [animationTrigger, setAnimationTrigger] = useState({}); // Track animation triggers for each holding
   const holdingRefs = useRef(new Map()); // Store refs for each holding section to enable scrolling
-  const [pieChartDate, setPieChartDate] = useState(null); // Selected date for pie charts (null = current)
   const [selectedAssetTypes, setSelectedAssetTypes] = useState(new Set(['stocks', 'cash', 'realestate', 'crypto'])); // Asset type filters
   const [selectedAssetTab, setSelectedAssetTab] = useState(null); // Selected asset tab: 'cash', 'realestate', 'stocks', 'crypto' (null = auto-select first available)
   const [openStockTickers, setOpenStockTickers] = useState(new Set()); // Set of open stock tickers for accordion expansion
@@ -987,144 +986,6 @@ const Analytics = ({ refreshKey }) => {
     }
   }, [stockTotals, selectedAssetTab]);
 
-  // Get available weekly dates from historyData
-  const availableWeeklyDates = useMemo(() => {
-    if (!historyData || historyData.length === 0) return [];
-    
-    // Get unique weekly dates from historyData
-    const weeklyDates = new Set();
-    historyData.forEach(item => {
-      if (item.captureType?.toUpperCase() === 'WEEKLY' && item.date) {
-        const date = item.dateNormalized || item.date;
-        if (date instanceof Date) {
-          // Normalize to start of week (Monday)
-          const weekStart = new Date(date);
-          weekStart.setDate(date.getDate() - date.getDay() + 1); // Monday
-          weekStart.setHours(0, 0, 0, 0);
-          weeklyDates.add(weekStart.getTime());
-        }
-      }
-    });
-    
-    // Convert to sorted array of Date objects
-    return Array.from(weeklyDates)
-      .map(timestamp => new Date(timestamp))
-      .sort((a, b) => a.getTime() - b.getTime());
-  }, [historyData]);
-
-  // Find closest weekly snapshot date for a given date
-  const findClosestWeeklyDate = (targetDate) => {
-    if (!targetDate || availableWeeklyDates.length === 0) return null;
-    
-    const targetTime = targetDate.getTime();
-    let closest = availableWeeklyDates[0];
-    let minDiff = Math.abs(closest.getTime() - targetTime);
-    
-    for (const date of availableWeeklyDates) {
-      const diff = Math.abs(date.getTime() - targetTime);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = date;
-      }
-    }
-    
-    return closest;
-  };
-
-  // Calculate historical portfolio distribution
-  const getHistoricalDistribution = useMemo(() => {
-    return (selectedDate) => {
-      if (!selectedDate) {
-        return { byUser: {}, byStock: {} };
-      }
-      
-      // Find the closest weekly snapshot date
-      const snapshotDate = findClosestWeeklyDate(selectedDate);
-      if (!snapshotDate) {
-        return { byUser: {}, byStock: {} };
-      }
-      
-      // For "By User": Use historyData with WEEKLY captureType
-      const byUser = {};
-      if (historyData && historyData.length > 0) {
-        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-        const weeklyData = historyData.filter(item => {
-          if (!selectedUsers.has(item.username)) return false;
-          if (item.captureType?.toUpperCase() !== 'WEEKLY') return false;
-          const itemDate = item.dateNormalized || item.date;
-          if (!(itemDate instanceof Date)) return false;
-          const diff = Math.abs(itemDate.getTime() - snapshotDate.getTime());
-          return diff <= threeDaysMs;
-        });
-        
-        // Sum totalValue per user (take the latest entry per user)
-        const userMap = new Map();
-        weeklyData.forEach(item => {
-          const existing = userMap.get(item.username);
-          if (!existing || (item.dateNormalized || item.date) > (existing.dateNormalized || existing.date)) {
-            userMap.set(item.username, item);
-          }
-        });
-        
-        userMap.forEach((item, username) => {
-          byUser[username] = item.totalValue || 0;
-        });
-      }
-      
-      // For "By Asset": Use holdingsHistory filtered to the selected week
-      const byStock = {};
-      if (holdingsHistory && holdingsHistory.length > 0) {
-        const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-        const filteredHoldings = holdingsHistory.filter(item => {
-          if (!selectedUsers.has(item.username)) return false;
-          const itemDate = item.date;
-          const diff = Math.abs(itemDate.getTime() - snapshotDate.getTime());
-          return diff <= threeDaysMs;
-        });
-        
-        // Group by user and ticker, taking the latest entry per user/ticker combination
-        const holdingsMap = new Map();
-        filteredHoldings.forEach(item => {
-          const key = `${item.username}_${item.ticker}`;
-          const existing = holdingsMap.get(key);
-          if (!existing || item.date > existing.date) {
-            holdingsMap.set(key, item);
-          }
-        });
-        
-        // Calculate values using current prices (since we don't have historical prices)
-        holdingsMap.forEach((holding) => {
-          const { username, ticker, shares } = holding;
-          
-          // Get price from current portfolio or use default
-          let price = 1.0; // Default for CASH/USD/REAL ESTATE
-          if (ticker === 'CASH' || ticker === 'USD') {
-            price = 1.0;
-          } else if (ticker === 'REAL ESTATE') {
-            price = 1.0;
-          } else {
-            // Find price from current portfolio
-            const portfolioItem = portfolio.find(p => p.ticker === ticker);
-            if (portfolioItem) {
-              price = portfolioItem.price || 0;
-            }
-          }
-          
-          const value = shares * price;
-          
-          // Sum by stock
-          const stockName = ticker === 'CASH' || ticker === 'USD' ? 'CASH' : ticker === 'REAL ESTATE' ? 'REAL ESTATE' : ticker;
-          if (!byStock[stockName]) {
-            byStock[stockName] = 0;
-          }
-          byStock[stockName] += value;
-        });
-      }
-      
-      return { byUser, byStock };
-    };
-  }, [holdingsHistory, historyData, selectedUsers, portfolio, findClosestWeeklyDate]);
-
   // Data for total value pie chart (by user) - with stable reference to prevent unnecessary re-renders
   const totalValueByUserRef = useRef([]);
   const totalValueByUserKeyRef = useRef('');
@@ -1132,25 +993,19 @@ const Analytics = ({ refreshKey }) => {
   const totalValueByUser = useMemo(() => {
     let userTotals = {};
     
-    if (pieChartDate) {
-      // Use historical data
-      const historical = getHistoricalDistribution(pieChartDate);
-      userTotals = historical.byUser;
-    } else {
-      // Use current portfolio data (filtered by asset type)
-      filteredPortfolio.forEach(item => {
-        // Filter by asset type
-        if (item.isCash && !selectedAssetTypes.has('cash')) return;
-        if (item.isRealEstate && !selectedAssetTypes.has('realestate')) return;
-        if (item.isCrypto && !selectedAssetTypes.has('crypto')) return;
-        if (!item.isCash && !item.isRealEstate && !item.isCrypto && !selectedAssetTypes.has('stocks')) return;
-        
-        if (!userTotals[item.username]) {
-          userTotals[item.username] = 0;
-        }
-        userTotals[item.username] += item.value;
-      });
-    }
+    // Use current portfolio data (filtered by asset type)
+    filteredPortfolio.forEach(item => {
+      // Filter by asset type
+      if (item.isCash && !selectedAssetTypes.has('cash')) return;
+      if (item.isRealEstate && !selectedAssetTypes.has('realestate')) return;
+      if (item.isCrypto && !selectedAssetTypes.has('crypto')) return;
+      if (!item.isCash && !item.isRealEstate && !item.isCrypto && !selectedAssetTypes.has('stocks')) return;
+      
+      if (!userTotals[item.username]) {
+        userTotals[item.username] = 0;
+      }
+      userTotals[item.username] += item.value;
+    });
     
     const newData = Object.entries(userTotals)
       .map(([username, value]) => ({
@@ -1170,7 +1025,7 @@ const Analytics = ({ refreshKey }) => {
     }
     
     return totalValueByUserRef.current;
-  }, [filteredPortfolio, pieChartDate, getHistoricalDistribution, selectedAssetTypes]);
+  }, [filteredPortfolio, selectedAssetTypes]);
 
   // Data for stock distribution pie chart (by stock across all selected users, including cash) - with stable reference
   const totalValueByStockRef = useRef([]);
@@ -1179,25 +1034,19 @@ const Analytics = ({ refreshKey }) => {
   const totalValueByStock = useMemo(() => {
     let stockTotals = {};
     
-    if (pieChartDate) {
-      // Use historical data
-      const historical = getHistoricalDistribution(pieChartDate);
-      stockTotals = historical.byStock;
-    } else {
-      // Use current portfolio data (filtered by asset type)
-      filteredPortfolio.forEach(item => {
-        // Filter by asset type
-        if (item.isCash && !selectedAssetTypes.has('cash')) return;
-        if (item.isRealEstate && !selectedAssetTypes.has('realestate')) return;
-        if (item.isCrypto && !selectedAssetTypes.has('crypto')) return;
-        if (!item.isCash && !item.isRealEstate && !item.isCrypto && !selectedAssetTypes.has('stocks')) return;
-        
-        if (!stockTotals[item.ticker]) {
-          stockTotals[item.ticker] = 0;
-        }
-        stockTotals[item.ticker] += item.value;
-      });
-    }
+    // Use current portfolio data (filtered by asset type)
+    filteredPortfolio.forEach(item => {
+      // Filter by asset type
+      if (item.isCash && !selectedAssetTypes.has('cash')) return;
+      if (item.isRealEstate && !selectedAssetTypes.has('realestate')) return;
+      if (item.isCrypto && !selectedAssetTypes.has('crypto')) return;
+      if (!item.isCash && !item.isRealEstate && !item.isCrypto && !selectedAssetTypes.has('stocks')) return;
+      
+      if (!stockTotals[item.ticker]) {
+        stockTotals[item.ticker] = 0;
+      }
+      stockTotals[item.ticker] += item.value;
+    });
     
     const newData = Object.entries(stockTotals)
       .map(([ticker, value]) => ({
@@ -1226,7 +1075,7 @@ const Analytics = ({ refreshKey }) => {
     }
     
     return totalValueByStockRef.current;
-  }, [filteredPortfolio, pieChartDate, getHistoricalDistribution, selectedAssetTypes]);
+  }, [filteredPortfolio, selectedAssetTypes]);
 
   // Cache for stock distributions with stable references
   const stockDistributionCacheRef = useRef(new Map());
@@ -1903,67 +1752,6 @@ const Analytics = ({ refreshKey }) => {
             <PieChart className="w-4 h-4 sm:w-5 sm:h-5 text-primary-500" />
             <h3 className="text-lg sm:text-xl font-bold text-white">Total Value Distribution</h3>
           </div>
-          
-          {/* Date Slider */}
-          {availableWeeklyDates.length > 0 && (
-            <div className="mb-4 sm:mb-6">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                <label className="text-xs sm:text-sm text-slate-400">
-                  {pieChartDate ? `Viewing data from: ${pieChartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Current Portfolio'}
-                </label>
-                <button
-                  onClick={() => setPieChartDate(null)}
-                  className={`text-xs px-2 py-1 sm:px-3 rounded transition-colors self-start sm:self-auto ${
-                    pieChartDate === null
-                      ? 'bg-primary-500 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}
-                >
-                  Current
-                </button>
-              </div>
-              <div className="flex items-center gap-2 sm:gap-4">
-                <input
-                  type="range"
-                  min="0"
-                  max={Math.max(0, availableWeeklyDates.length - 1)}
-                  value={(() => {
-                    if (!pieChartDate) return availableWeeklyDates.length - 1;
-                    const index = availableWeeklyDates.findIndex(d => d.getTime() === pieChartDate.getTime());
-                    return index >= 0 ? index : availableWeeklyDates.length - 1;
-                  })()}
-                  onChange={(e) => {
-                    const index = parseInt(e.target.value);
-                    if (index >= 0 && index < availableWeeklyDates.length) {
-                      setPieChartDate(availableWeeklyDates[index]);
-                    }
-                  }}
-                  className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
-                  style={{
-                    background: (() => {
-                      const maxIndex = Math.max(0, availableWeeklyDates.length - 1);
-                      const currentIndex = pieChartDate 
-                        ? (availableWeeklyDates.findIndex(d => d.getTime() === pieChartDate.getTime()) >= 0 
-                            ? availableWeeklyDates.findIndex(d => d.getTime() === pieChartDate.getTime())
-                            : maxIndex)
-                        : maxIndex;
-                      const percentage = maxIndex > 0 ? (currentIndex / maxIndex) * 100 : 0;
-                      return `linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ${percentage}%, #1e293b ${percentage}%, #1e293b 100%)`;
-                    })()
-                  }}
-                />
-                <div className="text-xs text-slate-400 min-w-[60px] sm:min-w-[80px] text-right text-[10px] sm:text-xs">
-                  {availableWeeklyDates.length > 0 && (
-                    <>
-                      {availableWeeklyDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      {' - '}
-                      {availableWeeklyDates[availableWeeklyDates.length - 1].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
           
           <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
             {/* User Distribution Pie Chart */}
