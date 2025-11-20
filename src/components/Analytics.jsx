@@ -1213,7 +1213,7 @@ const Analytics = ({ refreshKey }) => {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                         ))}
                       </Pie>
-                      <Tooltip content={<CustomTooltip />} />
+                      <Tooltip content={createCustomTooltip(distribution)} />
                     </RechartsPieChart>
                   </ResponsiveContainer>
                 </div>
@@ -1400,13 +1400,51 @@ const Analytics = ({ refreshKey }) => {
     return gains.sort((a, b) => b.gain - a.gain);
   };
 
+  // Create a tooltip factory that has access to the chart data
+  const createCustomTooltip = (chartData) => {
+    return ({ active, payload }) => {
+      if (active && payload && payload.length) {
+        const data = payload[0];
+        const name = data.name;
+        const value = data.value;
+        
+        // Calculate percentage from the chart data
+        // Sum all values in the chart data to get total
+        const total = chartData.reduce((sum, item) => sum + (item.value || 0), 0);
+        const percentValue = total > 0 ? (value / total) * 100 : 0;
+        
+        return (
+          <div className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl">
+            <p className="text-white font-semibold">{name}</p>
+            <p className="text-primary-400">
+              ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <span className="text-slate-300 ml-2">({percentValue.toFixed(2)}%)</span>
+            </p>
+          </div>
+        );
+      }
+      return null;
+    };
+  };
+
+  // Default CustomTooltip for backward compatibility (used in individual stock charts)
   const CustomTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
+      const data = payload[0];
+      const name = data.name;
+      const value = data.value;
+      
+      // For individual stock distribution charts, we need to calculate from the payload
+      // The payload contains all segments, so we can sum them
+      const total = payload.reduce((sum, item) => sum + (item.value || 0), 0);
+      const percentValue = total > 0 ? (value / total) * 100 : 0;
+      
       return (
         <div className="bg-slate-800/95 backdrop-blur-md p-3 rounded-lg border border-slate-700 shadow-xl">
-          <p className="text-white font-semibold">{payload[0].name}</p>
+          <p className="text-white font-semibold">{name}</p>
           <p className="text-primary-400">
-            ${payload[0].value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className="text-slate-300 ml-2">({percentValue.toFixed(2)}%)</span>
           </p>
         </div>
       );
@@ -1758,7 +1796,7 @@ const Analytics = ({ refreshKey }) => {
             <MemoizedUserDistributionChart 
               data={totalValueByUser}
               renderLabel={renderLabel}
-              CustomTooltip={CustomTooltip}
+              CustomTooltip={createCustomTooltip(totalValueByUser)}
             />
 
             {/* Stock Distribution Pie Chart */}
@@ -1766,7 +1804,7 @@ const Analytics = ({ refreshKey }) => {
               <MemoizedStockDistributionChart 
                 data={totalValueByStock}
                 renderLabel={renderLabel}
-                CustomTooltip={CustomTooltip}
+                CustomTooltip={createCustomTooltip(totalValueByStock)}
               />
             )}
           </div>
@@ -1936,7 +1974,7 @@ const Analytics = ({ refreshKey }) => {
                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                                   ))}
                                 </Pie>
-                                <Tooltip content={<CustomTooltip />} />
+                                <Tooltip content={createCustomTooltip(distribution)} />
                               </RechartsPieChart>
                             </ResponsiveContainer>
                           </div>
@@ -2076,7 +2114,7 @@ const Analytics = ({ refreshKey }) => {
                                         );
                                       })}
                                     </Pie>
-                                    <Tooltip content={<CustomTooltip />} />
+                                    <Tooltip content={createCustomTooltip(distribution)} />
                                   </RechartsPieChart>
                                 </ResponsiveContainer>
                               </div>
@@ -2496,7 +2534,7 @@ const Analytics = ({ refreshKey }) => {
                                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                                               ))}
                                             </Pie>
-                                            <Tooltip content={<CustomTooltip />} />
+                                            <Tooltip content={createCustomTooltip(distribution)} />
                                           </RechartsPieChart>
                                         </ResponsiveContainer>
                                       </div>
@@ -2776,7 +2814,7 @@ const Analytics = ({ refreshKey }) => {
                                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
                                               ))}
                                             </Pie>
-                                            <Tooltip content={<CustomTooltip />} />
+                                            <Tooltip content={createCustomTooltip(distribution)} />
                                           </RechartsPieChart>
                                         </ResponsiveContainer>
                                       </div>
